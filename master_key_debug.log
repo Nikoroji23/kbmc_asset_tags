@@ -1,0 +1,5 @@
+2026-06-05 11:18:03 {"user_id":1,"session_email":"admin@kbmc.com","role":"admin","found_user":1,"has_hash":true,"has_plain":true}
+2026-06-05 11:20:28 {"user_id":1,"session_email":"admin@kbmc.com","role":"admin","found_user":1,"has_hash":true,"has_plain":true}
+{"timestamp":"2026-06-05 11:25:26","user_id":1,"session_email":"admin@kbmc.com","role":"admin","submitted":"3E20E990","submitted_length":8,"stored_plain":"3E20E990","has_hash":true,"ok_hash":true,"ok_plain":true}
+{"timestamp":"2026-06-05 22:50:43","user_id":183,"session_email":"admin@kbmc.com","role":"admin","submitted":"921DB318","submitted_length":8,"stored_plain":"921DB318","has_hash":false,"ok_hash":false,"ok_plain":true}
+{"timestamp":"2026-06-05 22:50:55","user_id":183,"session_email":"admin@kbmc.com","role":"admin","submitted":"921DB318","submitted_length":8,"stored_plain":"921DB318","has_hash":true,"ok_hash":true,"ok_plain":true}
