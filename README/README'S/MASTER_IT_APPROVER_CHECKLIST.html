@@ -1,0 +1,565 @@
+<!-- Master IT Approver - Quick Setup Checklist -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Master IT Approver - Setup Checklist</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+        }
+        .header {
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            margin-bottom: 20px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.1);
+        }
+        .header h1 {
+            color: #333;
+            font-size: 28px;
+            margin-bottom: 8px;
+        }
+        .header p {
+            color: #666;
+            font-size: 14px;
+        }
+        .section {
+            background: white;
+            border-radius: 12px;
+            margin-bottom: 15px;
+            overflow: hidden;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.1);
+        }
+        .section-title {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 16px 24px;
+            font-size: 16px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .section-content {
+            padding: 24px;
+        }
+        .checklist {
+            list-style: none;
+        }
+        .checklist li {
+            padding: 12px 16px;
+            border-bottom: 1px solid #f0f0f0;
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+        }
+        .checklist li:last-child {
+            border-bottom: none;
+        }
+        .checkbox {
+            width: 24px;
+            height: 24px;
+            border: 2px solid #ddd;
+            border-radius: 6px;
+            flex-shrink: 0;
+            margin-top: 2px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #f9f9f9;
+            transition: all 0.3s;
+        }
+        .checkbox:hover {
+            border-color: #667eea;
+        }
+        .checkbox.checked {
+            background: #667eea;
+            border-color: #667eea;
+            color: white;
+        }
+        .task-label {
+            flex: 1;
+        }
+        .task-label strong {
+            display: block;
+            color: #333;
+            margin-bottom: 4px;
+        }
+        .task-label small {
+            color: #999;
+            display: block;
+        }
+        .task-status {
+            font-size: 12px;
+            padding: 4px 12px;
+            border-radius: 20px;
+            white-space: nowrap;
+            font-weight: 600;
+        }
+        .status-pending {
+            background: #fff3cd;
+            color: #856404;
+        }
+        .status-done {
+            background: #d4edda;
+            color: #155724;
+        }
+        .status-critical {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        .info-box {
+            background: #e7f3ff;
+            border-left: 4px solid #2196F3;
+            padding: 16px;
+            margin-bottom: 16px;
+            border-radius: 4px;
+            color: #0d47a1;
+            font-size: 14px;
+        }
+        .code-block {
+            background: #f5f5f5;
+            border: 1px solid #e0e0e0;
+            border-radius: 6px;
+            padding: 12px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            margin: 12px 0;
+            overflow-x: auto;
+            color: #333;
+        }
+        .button-group {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        .btn {
+            padding: 10px 16px;
+            border: none;
+            border-radius: 6px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .btn-primary {
+            background: #667eea;
+            color: white;
+        }
+        .btn-primary:hover {
+            background: #5568d3;
+        }
+        .btn-secondary {
+            background: #f0f0f0;
+            color: #333;
+        }
+        .btn-secondary:hover {
+            background: #e0e0e0;
+        }
+        .timeline {
+            position: relative;
+            padding: 20px 0;
+        }
+        .timeline-item {
+            padding-left: 40px;
+            margin-bottom: 24px;
+            position: relative;
+        }
+        .timeline-item::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 24px;
+            height: 24px;
+            background: #667eea;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+        }
+        .timeline-item:last-child::after {
+            display: none;
+        }
+        .timeline-item::after {
+            content: '';
+            position: absolute;
+            left: 11px;
+            top: 24px;
+            width: 2px;
+            height: calc(100% + 24px);
+            background: #e0e0e0;
+        }
+        .timeline-item h4 {
+            color: #333;
+            margin-bottom: 8px;
+            font-size: 15px;
+        }
+        .timeline-item p {
+            color: #666;
+            font-size: 13px;
+            line-height: 1.5;
+        }
+        .summary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 12px;
+            margin-top: 20px;
+        }
+        .summary h3 {
+            margin-bottom: 12px;
+            font-size: 16px;
+        }
+        .summary p {
+            font-size: 13px;
+            line-height: 1.6;
+            opacity: 0.95;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <h1>🔐 Master IT Approver Setup</h1>
+            <p>Complete checklist to set up alfonsoaninias0527@gmail.com as your system's master approval authority</p>
+        </div>
+
+        <!-- Phase 1: Account Setup -->
+        <div class="section">
+            <div class="section-title">
+                📋 Phase 1: Create IT Staff Account
+            </div>
+            <div class="section-content">
+                <div class="info-box">
+                    <strong>Goal:</strong> Create the IT staff account that will have approval privileges
+                </div>
+                
+                <div class="timeline">
+                    <div class="timeline-item">
+                        <h4>Step 1: Access User Management</h4>
+                        <p>Navigate to <strong>Manage Users</strong> page</p>
+                        <div class="code-block">http://localhost/kbmc_new_asset/users.php</div>
+                    </div>
+
+                    <div class="timeline-item">
+                        <h4>Step 2: Add New User</h4>
+                        <p>Click the <strong>"Add User"</strong> button</p>
+                        <p style="margin-top: 8px; color: #999; font-size: 12px;">You should be logged in as an admin</p>
+                    </div>
+
+                    <div class="timeline-item">
+                        <h4>Step 3: Fill User Details</h4>
+                        <p>Complete the form with:</p>
+                        <ul style="margin: 8px 0 0 16px; color: #666; font-size: 13px;">
+                            <li>Full Name: <code>Alfonso Aninias</code></li>
+                            <li>Email: <code>alfonsoaninias0527@gmail.com</code></li>
+                            <li>Employee ID: <code>IT-001</code></li>
+                            <li>Password: <code>[Strong password]</code></li>
+                            <li>Role: <code>IT Staff</code></li>
+                            <li>Department: <code>IT Department</code></li>
+                            <li>Position: <code>Security Administrator</code></li>
+                        </ul>
+                    </div>
+
+                    <div class="timeline-item">
+                        <h4>Step 4: Create Account</h4>
+                        <p>Click <strong>"Add User"</strong> button to create the IT staff account immediately</p>
+                    </div>
+                </div>
+
+                <ul class="checklist">
+                    <li>
+                        <div class="checkbox" onclick="this.classList.toggle('checked')">✓</div>
+                        <div class="task-label">
+                            <strong>Create IT staff account</strong>
+                            <small>alfonsoaninias0527@gmail.com as IT Staff</small>
+                        </div>
+                        <span class="task-status status-pending">Pending</span>
+                    </li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- Phase 2: Master Key Setup -->
+        <div class="section">
+            <div class="section-title">
+                🔑 Phase 2: Set Master Security Key
+            </div>
+            <div class="section-content">
+                <div class="info-box">
+                    <strong>Critical:</strong> This grants approval privileges and must be completed. The set_master_key.php file must be deleted after use.
+                </div>
+
+                <div class="timeline">
+                    <div class="timeline-item">
+                        <h4>Step 1: Generate Secure Key</h4>
+                        <p>Run command in PowerShell (Windows/XAMPP):</p>
+                        <div class="code-block">C:\xampp\php\php.exe -r "echo bin2hex(random_bytes(16)).PHP_EOL;"</div>
+                        <p style="margin-top: 8px; color: #999; font-size: 12px;">Result will be a 32-character hex string. Copy it.</p>
+                    </div>
+
+                    <div class="timeline-item">
+                        <h4>Step 2: Access Master Key Setup</h4>
+                        <p>Navigate to the master key setup page</p>
+                        <div class="code-block">http://localhost/kbmc_new_asset/set_master_key.php</div>
+                    </div>
+
+                    <div class="timeline-item">
+                        <h4>Step 3: Apply Master Key</h4>
+                        <p>Fill the form:</p>
+                        <ul style="margin: 8px 0 0 16px; color: #666; font-size: 13px;">
+                            <li>Select User: <code>Alfonso Aninias</code></li>
+                            <li>Master Key: <code>[Your 32-character key]</code></li>
+                            <li>Click: <strong>"Set Master Key & Grant Security IT"</strong></li>
+                        </ul>
+                    </div>
+
+                    <div class="timeline-item">
+                        <h4>Step 4: Delete Setup File</h4>
+                        <p>After success, immediately delete set_master_key.php for security:</p>
+                        <div class="code-block">rm set_master_key.php</div>
+                        <p style="margin-top: 8px; color: #c0392b; font-size: 12px;"><strong>⚠️ Do not skip this step!</strong></p>
+                    </div>
+                </div>
+
+                <ul class="checklist">
+                    <li>
+                        <div class="checkbox" onclick="this.classList.toggle('checked')">✓</div>
+                        <div class="task-label">
+                            <strong>Generate 32-character master key</strong>
+                            <small>Using PHP random_bytes</small>
+                        </div>
+                        <span class="task-status status-pending">Pending</span>
+                    </li>
+                    <li>
+                        <div class="checkbox" onclick="this.classList.toggle('checked')">✓</div>
+                        <div class="task-label">
+                            <strong>Run set_master_key.php</strong>
+                            <small>Select Alfonso, enter key, click submit</small>
+                        </div>
+                        <span class="task-status status-pending">Pending</span>
+                    </li>
+                    <li>
+                        <div class="checkbox" onclick="this.classList.toggle('checked')">✓</div>
+                        <div class="task-label">
+                            <strong>Delete set_master_key.php</strong>
+                            <small>Critical security step - remove file from server</small>
+                        </div>
+                        <span class="task-status status-critical">Critical!</span>
+                    </li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- Phase 3: Verification -->
+        <div class="section">
+            <div class="section-title">
+                ✅ Phase 3: Verify Setup
+            </div>
+            <div class="section-content">
+                <ul class="checklist">
+                    <li>
+                        <div class="checkbox" onclick="this.classList.toggle('checked')">✓</div>
+                        <div class="task-label">
+                            <strong>Check Approver Status</strong>
+                            <small>Go to assign_security_it.php → verify "Security IT" badge for Alfonso</small>
+                        </div>
+                        <span class="task-status status-pending">Pending</span>
+                    </li>
+                    <li>
+                        <div class="checkbox" onclick="this.classList.toggle('checked')">✓</div>
+                        <div class="task-label">
+                            <strong>Login as Alfonso</strong>
+                            <small>Test login with alfonsoaninias0527@gmail.com</small>
+                        </div>
+                        <span class="task-status status-pending">Pending</span>
+                    </li>
+                    <li>
+                        <div class="checkbox" onclick="this.classList.toggle('checked')">✓</div>
+                        <div class="task-label">
+                            <strong>Access Security Control</strong>
+                            <small>Navigate to security_control.php → should see "Verify Master Key" button</small>
+                        </div>
+                        <span class="task-status status-pending">Pending</span>
+                    </li>
+                    <li>
+                        <div class="checkbox" onclick="this.classList.toggle('checked')">✓</div>
+                        <div class="task-label">
+                            <strong>Test Master Key Verification</strong>
+                            <small>Click "Verify Master Key" → enter your 32-char key → should see "VERIFIED ✓"</small>
+                        </div>
+                        <span class="task-status status-pending">Pending</span>
+                    </li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- Phase 4: Test Approval Workflow -->
+        <div class="section">
+            <div class="section-title">
+                🧪 Phase 4: Test Approval Workflow
+            </div>
+            <div class="section-content">
+                <div class="info-box">
+                    <strong>Goal:</strong> Verify the complete approval workflow works end-to-end
+                </div>
+
+                <div class="timeline">
+                    <div class="timeline-item">
+                        <h4>Step 1: Create Approval Request</h4>
+                        <p>Login as admin → Users.php → Try to create a new IT Staff user</p>
+                        <p style="margin-top: 8px; color: #999; font-size: 12px;">Should show "User creation request submitted for approval"</p>
+                    </div>
+
+                    <div class="timeline-item">
+                        <h4>Step 2: Review Pending Approvals</h4>
+                        <p>Login as Alfonso → Admin Dashboard → Click "Pending Approvals" count</p>
+                        <p style="margin-top: 8px; color: #999; font-size: 12px;">Should be redirected to Security Control Center</p>
+                    </div>
+
+                    <div class="timeline-item">
+                        <h4>Step 3: Verify Master Key</h4>
+                        <p>Click "Verify Master Key" → Enter your 32-character key → Confirm success</p>
+                    </div>
+
+                    <div class="timeline-item">
+                        <h4>Step 4: Approve Request</h4>
+                        <p>In "Pending Approvals" section, click "Approve" on the test request</p>
+                        <p style="margin-top: 8px; color: #999; font-size: 12px;">User should be created in system</p>
+                    </div>
+
+                    <div class="timeline-item">
+                        <h4>Step 5: Verify User Created</h4>
+                        <p>Go to Users.php → Search for the newly approved user → Confirm active status</p>
+                    </div>
+                </div>
+
+                <ul class="checklist">
+                    <li>
+                        <div class="checkbox" onclick="this.classList.toggle('checked')">✓</div>
+                        <div class="task-label">
+                            <strong>Test IT staff creation request</strong>
+                            <small>Create test IT staff user as admin</small>
+                        </div>
+                        <span class="task-status status-pending">Pending</span>
+                    </li>
+                    <li>
+                        <div class="checkbox" onclick="this.classList.toggle('checked')">✓</div>
+                        <div class="task-label">
+                            <strong>Verify pending request appears</strong>
+                            <small>Check Security Control Center as Alfonso</small>
+                        </div>
+                        <span class="task-status status-pending">Pending</span>
+                    </li>
+                    <li>
+                        <div class="checkbox" onclick="this.classList.toggle('checked')">✓</div>
+                        <div class="task-label">
+                            <strong>Approve the test request</strong>
+                            <small>Verify master key first, then click Approve</small>
+                        </div>
+                        <span class="task-status status-pending">Pending</span>
+                    </li>
+                    <li>
+                        <div class="checkbox" onclick="this.classList.toggle('checked')">✓</div>
+                        <div class="task-label">
+                            <strong>Confirm user was created</strong>
+                            <small>New user appears in Users.php with correct role</small>
+                        </div>
+                        <span class="task-status status-pending">Pending</span>
+                    </li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- Key Information -->
+        <div class="section">
+            <div class="section-title">
+                📝 Important Information
+            </div>
+            <div class="section-content">
+                <h4 style="color: #333; margin-bottom: 12px; font-weight: 600;">Master IT Approver Account Details</h4>
+                <div style="background: #f9f9f9; padding: 16px; border-radius: 6px; margin-bottom: 16px; font-size: 13px;">
+                    <div style="margin-bottom: 8px;"><strong>Email:</strong> alfonsoaninias0527@gmail.com</div>
+                    <div style="margin-bottom: 8px;"><strong>Role:</strong> IT Staff (with Security Admin privileges)</div>
+                    <div style="margin-bottom: 8px;"><strong>Position:</strong> Security Administrator</div>
+                    <div style="margin-bottom: 8px;"><strong>Master Key:</strong> [Your 32-char key - KEEP SECURE]</div>
+                    <div><strong>Access:</strong> security_control.php for approvals</div>
+                </div>
+
+                <h4 style="color: #333; margin-bottom: 12px; font-weight: 600;">Key Features</h4>
+                <ul style="list-style: none; font-size: 13px;">
+                    <li style="margin-bottom: 8px;">✅ Admin-created IT/Admin users require approval</li>
+                    <li style="margin-bottom: 8px;">✅ Master key verified per-session (30-minute timeout)</li>
+                    <li style="margin-bottom: 8px;">✅ All approvals logged for audit trail</li>
+                    <li style="margin-bottom: 8px;">✅ Notifications sent to admins and approvers</li>
+                    <li style="margin-bottom: 8px;">✅ Can approve or reject with reason</li>
+                </ul>
+
+                <h4 style="color: #333; margin: 20px 0 12px; font-weight: 600;">Security Best Practices</h4>
+                <ul style="list-style: disc; margin-left: 16px; color: #666; font-size: 13px;">
+                    <li>Store master key securely (password manager)</li>
+                    <li>Never share master key via email/chat</li>
+                    <li>Delete set_master_key.php after use</li>
+                    <li>Change master key every 90 days</li>
+                    <li>Log off after approving</li>
+                    <li>Review audit_logs.php regularly</li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- Quick Links -->
+        <div class="section">
+            <div class="section-title">
+                🔗 Quick Links
+            </div>
+            <div class="section-content">
+                <div class="button-group">
+                    <a href="http://localhost/kbmc_new_asset/users.php" class="btn btn-primary" target="_blank">
+                        👥 Manage Users
+                    </a>
+                    <a href="http://localhost/kbmc_new_asset/set_master_key.php" class="btn btn-primary" target="_blank">
+                        🔑 Set Master Key
+                    </a>
+                    <a href="http://localhost/kbmc_new_asset/assign_security_it.php" class="btn btn-primary" target="_blank">
+                        ⚙️ Assign Security IT
+                    </a>
+                    <a href="http://localhost/kbmc_new_asset/security_control.php" class="btn btn-primary" target="_blank">
+                        🛡️ Security Control
+                    </a>
+                    <a href="http://localhost/kbmc_new_asset/admin_dashboard.php" class="btn btn-primary" target="_blank">
+                        📊 Admin Dashboard
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <!-- Summary -->
+        <div class="summary">
+            <h3>✅ Setup Complete!</h3>
+            <p>Once you've checked all items above, your master IT approver account will be fully operational. Alfonso Aninias (alfonsoaninias0527@gmail.com) will be able to approve new IT/Admin account creation requests with full security controls.</p>
+        </div>
+
+        <div style="text-align: center; padding: 30px 0; color: white; font-size: 12px; opacity: 0.7;">
+            <p>Setup Guide for KBMC Asset Management System | v1.0</p>
+        </div>
+    </div>
+</body>
+</html>

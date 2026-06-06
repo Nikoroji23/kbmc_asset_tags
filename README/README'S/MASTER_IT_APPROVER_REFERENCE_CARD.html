@@ -1,0 +1,436 @@
+<!-- Master IT Approver - Quick Reference Card (Printable) -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Master IT Approver - Quick Reference Card</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Courier New', monospace;
+            background: white;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+        .card-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: 20px;
+            max-width: 1200px;
+            width: 100%;
+        }
+        .card {
+            border: 3px solid #333;
+            padding: 20px;
+            background: white;
+            page-break-inside: avoid;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            break-inside: avoid;
+        }
+        .card-title {
+            font-size: 16px;
+            font-weight: bold;
+            border-bottom: 3px solid #333;
+            padding-bottom: 8px;
+            margin-bottom: 12px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        .section {
+            margin-bottom: 12px;
+            font-size: 12px;
+            line-height: 1.6;
+        }
+        .section-label {
+            font-weight: bold;
+            text-decoration: underline;
+            margin-bottom: 4px;
+            font-size: 11px;
+        }
+        .code {
+            background: #f5f5f5;
+            border-left: 2px solid #333;
+            padding: 4px 8px;
+            margin: 4px 0;
+            font-family: monospace;
+            font-size: 11px;
+            word-break: break-all;
+        }
+        .url {
+            background: #ffffcc;
+            border-left: 2px solid #ff9900;
+            padding: 4px 8px;
+            margin: 4px 0;
+            font-family: monospace;
+            font-size: 10px;
+        }
+        .checklist {
+            list-style: none;
+            font-size: 11px;
+            margin: 0;
+            padding: 0;
+        }
+        .checklist li {
+            padding: 2px 0;
+            padding-left: 16px;
+            position: relative;
+        }
+        .checklist li::before {
+            content: '☐';
+            position: absolute;
+            left: 0;
+        }
+        table {
+            width: 100%;
+            font-size: 10px;
+            border-collapse: collapse;
+            margin: 4px 0;
+        }
+        table th, table td {
+            border: 1px solid #999;
+            padding: 4px;
+            text-align: left;
+        }
+        table th {
+            background: #f0f0f0;
+            font-weight: bold;
+        }
+        .warning {
+            background: #ffcccc;
+            border: 1px solid #cc0000;
+            padding: 8px;
+            margin: 8px 0;
+            font-size: 11px;
+            font-weight: bold;
+        }
+        .success {
+            background: #ccffcc;
+            border: 1px solid #00cc00;
+            padding: 8px;
+            margin: 8px 0;
+            font-size: 11px;
+            font-weight: bold;
+        }
+        @media print {
+            body { padding: 0; }
+            .card { page-break-inside: avoid; break-inside: avoid; }
+        }
+        @media (max-width: 768px) {
+            .card-container { grid-template-columns: 1fr; }
+        }
+        .key-info {
+            border: 2px dashed #333;
+            padding: 8px;
+            margin: 8px 0;
+            font-size: 11px;
+            background: #fffacd;
+        }
+    </style>
+</head>
+<body>
+    <div class="card-container">
+
+        <!-- Card 1: Account Info -->
+        <div class="card">
+            <div class="card-title">🔐 Master IT Approver</div>
+            
+            <div class="section">
+                <div class="section-label">Account Details:</div>
+                <div class="key-info">
+                    <strong>Email:</strong><br>
+                    alfonsoaninias0527@gmail.com<br><br>
+                    <strong>Role:</strong><br>
+                    IT Staff (Security Admin)<br><br>
+                    <strong>Position:</strong><br>
+                    Security Administrator
+                </div>
+            </div>
+
+            <div class="section">
+                <div class="section-label">Master Key:</div>
+                <ul class="checklist">
+                    <li>32-character hex string</li>
+                    <li>BCrypt hashed in database</li>
+                    <li>Session verification: 30 min</li>
+                    <li>NEVER share via email</li>
+                    <li>Store in password manager</li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- Card 2: Quick Setup -->
+        <div class="card">
+            <div class="card-title">⚡ Quick Setup</div>
+            
+            <div class="section">
+                <div class="section-label">1. Create Account</div>
+                <div class="url">users.php</div>
+                Add → IT Staff → Submit
+            </div>
+
+            <div class="section">
+                <div class="section-label">2. Set Master Key</div>
+                <div class="url">set_master_key.php</div>
+                Select user → Paste key → Submit
+            </div>
+
+            <div class="section">
+                <div class="section-label">3. DELETE FILE</div>
+                <div class="warning">
+                    ⚠️ DELETE set_master_key.php
+                </div>
+                <div class="code">rm set_master_key.php</div>
+            </div>
+
+            <div class="section">
+                <div class="section-label">4. Test</div>
+                Login → security_control.php
+            </div>
+        </div>
+
+        <!-- Card 3: Daily Workflow -->
+        <div class="card">
+            <div class="card-title">📋 Daily Workflow</div>
+            
+            <table>
+                <tr>
+                    <th>Step</th>
+                    <th>Action</th>
+                </tr>
+                <tr>
+                    <td>1</td>
+                    <td>Login as Alfonso</td>
+                </tr>
+                <tr>
+                    <td>2</td>
+                    <td>Go to security_control.php</td>
+                </tr>
+                <tr>
+                    <td>3</td>
+                    <td>Click "Verify Master Key"</td>
+                </tr>
+                <tr>
+                    <td>4</td>
+                    <td>Enter 32-char key</td>
+                </tr>
+                <tr>
+                    <td>5</td>
+                    <td>Review pending requests</td>
+                </tr>
+                <tr>
+                    <td>6</td>
+                    <td>Approve or Reject</td>
+                </tr>
+                <tr>
+                    <td>7</td>
+                    <td>Log out</td>
+                </tr>
+            </table>
+        </div>
+
+        <!-- Card 4: Key URLs -->
+        <div class="card">
+            <div class="card-title">🔗 Key URLs</div>
+            
+            <div class="section">
+                <div class="section-label">Setup (Admin):</div>
+                <div class="url">users.php</div>
+                <div class="url">set_master_key.php</div>
+                <div class="url">assign_security_it.php</div>
+            </div>
+
+            <div class="section">
+                <div class="section-label">Approver (Alfonso):</div>
+                <div class="url">security_control.php</div>
+                <div class="url">audit_logs.php</div>
+                <div class="url">admin_dashboard.php</div>
+            </div>
+
+            <div class="section">
+                <div class="section-label">Base URL:</div>
+                <div class="code">localhost/kbmc_new_asset</div>
+            </div>
+        </div>
+
+        <!-- Card 5: Master Key Generation -->
+        <div class="card">
+            <div class="card-title">🔑 Generate Master Key</div>
+            
+            <div class="section">
+                <div class="section-label">PowerShell (Windows):</div>
+                <div class="code">C:\xampp\php\php.exe -r
+"echo bin2hex(random_bytes(16))
+.PHP_EOL;"</div>
+            </div>
+
+            <div class="section">
+                <div class="section-label">Linux/Mac:</div>
+                <div class="code">php -r "echo bin2hex(
+random_bytes(16)).PHP_EOL;"</div>
+            </div>
+
+            <div class="section">
+                <div class="section-label">Output:</div>
+                <div class="code">a7f3e2c1b9d4f8a5e6c3d2b1f9e4a7c6</div>
+                (32 hex characters - copy this)
+            </div>
+        </div>
+
+        <!-- Card 6: Approval Decision Tree -->
+        <div class="card">
+            <div class="card-title">🌳 Approval Decision</div>
+            
+            <div class="section">
+                <div class="section-label">APPROVE if:</div>
+                <ul class="checklist">
+                    <li>Valid business reason</li>
+                    <li>Correct role requested</li>
+                    <li>Email is correct</li>
+                    <li>User details complete</li>
+                    <li>Authorized requestor</li>
+                </ul>
+            </div>
+
+            <div class="section">
+                <div class="section-label">REJECT if:</div>
+                <ul class="checklist">
+                    <li>Suspicious activity</li>
+                    <li>Incomplete information</li>
+                    <li>User not authorized</li>
+                    <li>Duplicate account</li>
+                    <li>Policy violation</li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- Card 7: Security Checklist -->
+        <div class="card">
+            <div class="card-title">🔒 Security Checklist</div>
+            
+            <div class="section">
+                <div class="section-label">Before Approving:</div>
+                <ul class="checklist">
+                    <li>Master key verified ✓</li>
+                    <li>User details checked</li>
+                    <li>Request is legitimate</li>
+                    <li>No duplicate accounts</li>
+                    <li>Requestor is authorized</li>
+                </ul>
+            </div>
+
+            <div class="section">
+                <div class="section-label">After Approving:</div>
+                <ul class="checklist">
+                    <li>User appears in Users.php</li>
+                    <li>Status is "active"</li>
+                    <li>Log entry created</li>
+                    <li>Notification sent</li>
+                    <li>Log out from system</li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- Card 8: Troubleshooting -->
+        <div class="card">
+            <div class="card-title">❌ Troubleshooting</div>
+            
+            <div class="section">
+                <div class="section-label">Master Key Fails:</div>
+                <ul class="checklist">
+                    <li>Check it's 32 chars exact</li>
+                    <li>Check case (sensitive)</li>
+                    <li>Check for spaces</li>
+                    <li>Regenerate if lost</li>
+                </ul>
+            </div>
+
+            <div class="section">
+                <div class="section-label">No Pending Requests:</div>
+                <ul class="checklist">
+                    <li>Refresh page</li>
+                    <li>Check admin created IT/Admin user</li>
+                    <li>Run: SELECT * FROM
+                        user_approval_requests</li>
+                </ul>
+            </div>
+
+            <div class="section">
+                <div class="section-label">Access Denied:</div>
+                <ul class="checklist">
+                    <li>Verify is_security_admin=1</li>
+                    <li>Re-run set_master_key.php</li>
+                    <li>Check user role is IT Staff</li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- Card 9: Database Queries -->
+        <div class="card">
+            <div class="card-title">🗄️ Database Queries</div>
+            
+            <div class="section">
+                <div class="section-label">Check Approver:</div>
+                <div class="code">SELECT is_security_admin, 
+master_key_hash FROM users 
+WHERE email = '[email]';</div>
+            </div>
+
+            <div class="section">
+                <div class="section-label">Pending Requests:</div>
+                <div class="code">SELECT * FROM 
+user_approval_requests 
+WHERE status='pending';</div>
+            </div>
+
+            <div class="section">
+                <div class="section-label">Approval History:</div>
+                <div class="code">SELECT * FROM audit_logs 
+WHERE action LIKE '%Approve%' 
+LIMIT 10;</div>
+            </div>
+        </div>
+
+        <!-- Card 10: Important Notes -->
+        <div class="card">
+            <div class="card-title">📌 Important Notes</div>
+            
+            <div class="success">
+                ✓ Setup is already built-in
+                ✓ All security features active
+                ✓ No code changes needed
+                ✓ Ready to use immediately
+            </div>
+
+            <div class="warning">
+                ⚠️ Delete set_master_key.php
+                ⚠️ Master key never shareable
+                ⚠️ 30-min session timeout
+                ⚠️ BCrypt hashed - no recovery
+            </div>
+
+            <div class="section">
+                <div class="section-label">Remember:</div>
+                <ul class="checklist">
+                    <li>Master key = approval power</li>
+                    <li>Protect master key</li>
+                    <li>Verify every approval</li>
+                    <li>Audit trails active</li>
+                    <li>IP logging enabled</li>
+                </ul>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        // Enable printing
+        window.onload = function() {
+            console.log('Print this page: Ctrl+P or Cmd+P');
+        }
+    </script>
+</body>
+</html>
