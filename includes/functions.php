@@ -441,22 +441,49 @@ function ensureUserSecuritySchema() {
 
 function addNotification($userId, $type, $title, $message, $relatedId = null) {
     global $pdo;
-    $stmt = $pdo->prepare("INSERT INTO notifications (user_id, type, title, message, related_id) VALUES (?, ?, ?, ?, ?)");
-    $stmt->execute([$userId, $type, $title, $message, $relatedId]);
+    // Prepare notification data and compute recipient-specific URL
+    $notif = [
+        'user_id' => $userId,
+        'type' => $type,
+        'title' => $title,
+        'message' => $message,
+        'related_id' => $relatedId
+    ];
+    $url = null;
+    try {
+        $url = getNotificationUrl($notif, null);
+    } catch (Exception $e) {
+        // Fall back to null if URL resolution fails
+        error_log('[ADD_NOTIFICATION] getNotificationUrl failed: ' . $e->getMessage());
+        $url = null;
+    }
+
+    $stmt = $pdo->prepare("INSERT INTO notifications (user_id, type, title, message, related_id, url) VALUES (?, ?, ?, ?, ?, ?)");
+    $stmt->execute([$userId, $type, $title, $message, $relatedId, $url]);
     $notificationId = $pdo->lastInsertId();
-    
+
     // Send email notification if configured
     if (isEmailConfigured()) {
-        sendEmailNotificationToUser($userId, $type, $title, $message, $relatedId);
+        sendEmailNotificationToUser($userId, $type, $title, $message, $relatedId, $url);
     }
-    
+
     return $notificationId;
 }
 
 function addSystemNotificationOnly($userId, $type, $title, $message, $relatedId = null) {
     global $pdo;
-    $stmt = $pdo->prepare("INSERT INTO notifications (user_id, type, title, message, related_id) VALUES (?, ?, ?, ?, ?)");
-    $stmt->execute([$userId, $type, $title, $message, $relatedId]);
+    $notif = [
+        'user_id' => $userId,
+        'type' => $type,
+        'title' => $title,
+        'message' => $message,
+        'related_id' => $relatedId
+    ];
+    $url = null;
+    try { $url = getNotificationUrl($notif, null); } catch (Exception $e) { error_log('[SYS_NOTIF] getNotificationUrl failed: '.$e->getMessage()); }
+
+    $stmt = $pdo->prepare("INSERT INTO notifications (user_id, type, title, message, related_id, url) VALUES (?, ?, ?, ?, ?, ?)");
+    $stmt->execute([$userId, $type, $title, $message, $relatedId, $url]);
     return $pdo->lastInsertId();
 }
 
@@ -496,22 +523,24 @@ function notifyITStaff($type, $title, $message, $related_id = 0) {
     $itUsers = $pdo->query("SELECT id, email, full_name FROM users WHERE role IN ('admin', 'it_staff') AND status = 'active'")->fetchAll();
     error_log("[NOTIFY_IT_STAFF] Found " . count($itUsers) . " IT staff members");
     
-    $stmt = $pdo->prepare("
-        INSERT INTO notifications (user_id, type, related_id, title, message, is_read, created_at) 
-        VALUES (?, ?, ?, ?, ?, 0, NOW())
-    ");
-    
-    foreach ($itUsers as $user) {
-        $params = [$user['id'], $type, $related_id, $title, $message];
-        error_log("[NOTIFY_IT_STAFF] Executing with params: user_id=" . $user['id'] . ", type='$type', related_id=$related_id, title='$title'");
-        
-        try {
-            $result = $stmt->execute($params);
-            error_log("[NOTIFY_IT_STAFF] ✓ Insert successful for user {$user['id']}");
-        } catch (Exception $e) {
-            error_log("[NOTIFY_IT_STAFF] ❌ Insert failed: " . $e->getMessage());
+        // Create per-user system notifications (uses addSystemNotificationOnly to compute URL)
+        foreach ($itUsers as &$user) {
+            try {
+                $nid = addSystemNotificationOnly($user['id'], $type, $title, $message, $related_id);
+                // Ensure $user carries the computed URL for email sending
+                $notif = [
+                    'user_id' => $user['id'],
+                    'type' => $type,
+                    'title' => $title,
+                    'message' => $message,
+                    'related_id' => $related_id
+                ];
+                $user['url'] = getNotificationUrl($notif, $user['role'] ?? null);
+                error_log("[NOTIFY_IT_STAFF] Inserted notification id={$nid} for user {$user['id']} url=" . ($user['url'] ?? 'NULL'));
+            } catch (Exception $e) {
+                error_log("[NOTIFY_IT_STAFF] ❌ Failed to create notification for user {$user['id']}: " . $e->getMessage());
+            }
         }
-    }
     
     // Send email notifications to all IT staff for ALL notification types
     if (isEmailConfigured() && !empty($itUsers)) {
@@ -623,15 +652,18 @@ function sendEmailNotificationToITStaff($type, $title, $message, $related_id, $i
             error_log("[NOTIFY_IT_STAFF_EMAIL] Skipping staff member (no email): " . $staff['full_name']);
             continue;
         }
-        
+
+        // Prefer precomputed per-staff URL when available
+        $personalUrl = $staff['url'] ?? ($actionUrl ? ('http://' . $_SERVER['HTTP_HOST'] . dirname($_SERVER['PHP_SELF']) . '/' . $actionUrl) : '');
+
         $emailBody = emailTemplate(
             $title,
             "<p>Hello <strong>" . sanitize($staff['full_name']) . "</strong>,</p>
             <p>" . sanitize($message) . "</p>" .
             $context .
             "<p style='margin-top: 20px; color: #666; font-size: 14px;'>This is an automated notification from the KBMC Asset Management System. Please review and take action as needed.</p>",
-            $actionUrl ? 'Review in System' : '',
-            $actionUrl ? ('http://' . $_SERVER['HTTP_HOST'] . dirname($_SERVER['PHP_SELF']) . '/' . $actionUrl) : ''
+            $personalUrl ? 'Review in System' : '',
+            $personalUrl
         );
         
         $subject = '[KBMC Alert] ' . $title;
@@ -645,7 +677,7 @@ function sendEmailNotificationToITStaff($type, $title, $message, $related_id, $i
     }
 }
 
-function sendEmailNotificationToUser($userId, $type, $title, $message, $relatedId = null) {
+function sendEmailNotificationToUser($userId, $type, $title, $message, $relatedId = null, $url = null) {
     global $pdo;
     
     // Get user email
@@ -723,6 +755,9 @@ function sendEmailNotificationToUser($userId, $type, $title, $message, $relatedI
         }
     }
     
+    // Prefer passed URL when available
+    $finalActionUrl = $url ?: ($actionUrl ? ('http://' . $_SERVER['HTTP_HOST'] . dirname($_SERVER['PHP_SELF']) . '/' . $actionUrl) : '');
+
     // Create email body
     $emailBody = emailTemplate(
         $title,
@@ -730,8 +765,8 @@ function sendEmailNotificationToUser($userId, $type, $title, $message, $relatedI
         <p>" . sanitize($message) . "</p>" .
         $context .
         "<p style='margin-top: 20px; color: #666; font-size: 14px;'>This is an automated notification from the KBMC Asset Management System.</p>",
-        $actionUrl ? 'View Details' : '',
-        $actionUrl ? ('http://' . $_SERVER['HTTP_HOST'] . dirname($_SERVER['PHP_SELF']) . '/' . $actionUrl) : ''
+        $finalActionUrl ? 'View Details' : '',
+        $finalActionUrl
     );
     
     $subject = '[KBMC] ' . $title;
@@ -768,13 +803,37 @@ function resolveClearanceAssignment(int $refId): array {
     return [0, 0];
 }
 
-function getNotificationUrl(array $notif): string
+function getNotificationUrl(array $notif, ?string $role = null): string
 {
+    // If URL was precomputed and stored on the notification, return it immediately
+    if (!empty($notif['url'])) {
+        return $notif['url'];
+    }
+
     $rawType = $notif['type'] ?? '';
     $type  = strtolower(trim($rawType));
     $title = strtolower(trim($notif['title'] ?? ''));
     $refId = (int)($notif['related_id'] ?? 0);
-    $role  = $_SESSION['role'] ?? 'employee';
+
+    // Determine role: prefer passed-in role, else try to resolve from user_id, else session, default employee
+    if ($role === null) {
+        $role = 'employee';
+        if (!empty($notif['user_id'])) {
+            try {
+                $uStmt = $GLOBALS['pdo']->prepare("SELECT role FROM users WHERE id = ? LIMIT 1");
+                $uStmt->execute([(int)$notif['user_id']]);
+                $ur = $uStmt->fetch(PDO::FETCH_ASSOC);
+                if ($ur && !empty($ur['role'])) {
+                    $role = $ur['role'];
+                }
+            } catch (Exception $e) {
+                // ignore and fall back to session
+            }
+        } elseif (isset($_SESSION['role'])) {
+            $role = $_SESSION['role'];
+        }
+    }
+
     $isAdmin = $role === 'admin';
     $isIT  = $role === 'it_staff';
     
@@ -783,6 +842,9 @@ function getNotificationUrl(array $notif): string
         || str_contains($type, 'clearance complete')
         || str_contains($title, 'clearance completed')
         || str_contains($title, 'clearance complete');
+
+    $isDevicesDeployed = $type === 'device_deployed_bulk'
+        || str_contains($title, 'devices deployed');
 
     // Log all notification URL requests (include raw vs normalized type)
     error_log("[NOTIF_URL_FLOW] Processing rawType='$rawType', normalizedType='$type', title='$title', refId=$refId, role='$role', isAdmin=$isAdmin, isIT=$isIT");
@@ -803,13 +865,32 @@ function getNotificationUrl(array $notif): string
         return $targetUserId ? 'it_clearance.php?user_id=' . $targetUserId . '&done=1' : 'it_clearance.php?done=1';
     }
 
+    // Legacy or missing-type devices deployed notifications
+    if ($isDevicesDeployed) {
+        return $refId ? 'view_device.php?id=' . $refId : 'deployments.php';
+    }
+
     // ADMIN-SPECIFIC NOTIFICATIONS
     if ($isAdmin) {
         switch ($type) {
+            case 'device_deployed':
+            case 'device_deployed_bulk':
+                return $refId ? 'view_device.php?id=' . $refId : 'deployments.php';
+
+            case 'device_returned':
+            case 'device_disposed':
+                return $refId ? 'view_device.php?id=' . $refId : 'deployments.php';
+
+            case 'new_device_added':
+                return $refId ? 'view_device.php?id=' . $refId : 'devices.php';
+
+            case 'low_stock':
+                return 'devices.php';
+
             case 'account_recovery_requested':
             case 'account_recovery_approved':
             case 'account_recovery_rejected':
-                return 'recovery_requests.php?status=pending';
+                return 'recovery_requests.php';
 
             case 'user_approval_requested':
             case 'user_creation_approved':
@@ -840,11 +921,6 @@ function getNotificationUrl(array $notif): string
             case 'user_clearance_completed':
                 return $refId ? 'it_clearance.php?user_id=' . $refId . '&done=1' : 'it_clearance.php';
 
-            case 'user_creation_approved':
-            case 'user_creation_rejected':
-            case 'user_approval_requested':
-                return 'users.php?tab=approvals';
-
             default:
                 return 'admin_dashboard.php';
         }
@@ -872,6 +948,7 @@ function getNotificationUrl(array $notif): string
                 return 'maintenance_repairs.php';
 
             case 'device_deployed':
+            case 'device_deployed_bulk':
             case 'device_returned':
             case 'voluntary_return_requested':
                 return 'deployments.php';
@@ -933,13 +1010,15 @@ function getNotificationUrl(array $notif): string
             case 'device_request':
                 return 'requests.php';
 
-            case 'low_stock':
-                return 'devices.php';
+            case 'device_returned':
+            case 'device_disposed':
+                return $refId ? 'view_device.php?id=' . $refId : 'deployments.php';
 
             case 'new_device_added':
-                return $refId
-                    ? 'view_device.php?id=' . $refId
-                    : 'devices.php';
+                return $refId ? 'view_device.php?id=' . $refId : 'devices.php';
+
+            case 'low_stock':
+                return 'devices.php';
 
             default:
                 // Fallback: if there is a related_id, direct to device view; otherwise go to dashboard
@@ -952,12 +1031,16 @@ function getNotificationUrl(array $notif): string
 
     switch ($type) {
         case 'device_deployed':
+        case 'device_deployed_bulk':
             return $refId
                 ? 'view_device.php?id=' . $refId
                 : 'deployments.php';
 
         case 'device_returned':
-            return 'deployments.php';
+            return $refId ? 'view_device.php?id=' . $refId : 'deployments.php';
+
+        case 'device_disposed':
+            return $refId ? 'view_device.php?id=' . $refId : 'dashboard.php';
 
         case 'request_approved':
         case 'request_rejected':
@@ -965,7 +1048,7 @@ function getNotificationUrl(array $notif): string
 
         case 'account_recovery_approved':
         case 'account_recovery_rejected':
-            return 'dashboard.php';
+            return 'requests.php';
 
         case 'user_creation_approved':
         case 'user_creation_rejected':
@@ -973,7 +1056,7 @@ function getNotificationUrl(array $notif): string
             return 'dashboard.php';
 
         case 'new_user_account_created':
-            return 'admin_accounts.php';
+            return 'dashboard.php';
 
         case 'user_clearance_completed':
             $url = $refId ? 'it_clearance.php?user_id=' . $refId . '&done=1' : 'it_clearance.php?done=1';

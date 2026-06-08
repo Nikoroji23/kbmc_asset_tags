@@ -228,25 +228,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                         $userId
                     );
                     
-                    // Send email notification to employee about clearance
-                    if (isEmailConfigured()) {
-                        $emailBody = emailTemplate(
-                            'User Clearance Completed',
-                            "<p>Hello <strong>" . sanitize($user['full_name']) . "</strong>,</p>
-                            <p>Your IT clearance has been completed successfully. All assigned device(s) have been processed.</p>
-                            <div style='background: #d4edda; padding: 15px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #27ae60;'>
-                                <p><strong>Clearance Summary:</strong></p>
-                                <p><i class='fas fa-check'></i> <strong>Devices Processed:</strong> " . count($assignments) . " device(s)</p>
-                                <p><i class='fas fa-laptop'></i> <strong>Device List:</strong> " . sanitize($deviceList) . "</p>
-                                <p><i class='fas fa-calendar'></i> <strong>Clearance Date:</strong> " . date('F d, Y') . "</p>" .
-                                ($isSingleMode ? "<p><i class='fas fa-info-circle'></i> <strong>Mode:</strong> Single-Device Clearance</p>" : "<p><i class='fas fa-info-circle'></i> <strong>Mode:</strong> Full Employee Clearance</p>") .
-                            "</div>
-                            <p>Thank you for your cooperation. If you have any questions regarding your clearance, please contact the IT department.</p>",
-                            'View Clearance',
-                            'http://' . $_SERVER['HTTP_HOST'] . dirname($_SERVER['PHP_SELF']) . '/it_clearance.php'
-                        );
-                        sendEmail($user['email'], 'IT Clearance Completed', $emailBody);
-                    }
+                    // Employee notification is created above with addNotificationIfNotExists()
+                    // which triggers the email via centralized notification helpers.
                     
                     notifyITStaff(
                         'user_clearance_completed',

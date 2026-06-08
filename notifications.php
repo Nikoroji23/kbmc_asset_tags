@@ -67,89 +67,171 @@ if ($userRole === 'admin') {
 // Icon map per notification type
 function getNotificationIcon(string $type): string {
     return match($type) {
-        'device_deployed'            => 'laptop',
+        // Device notifications
+        'device_deployed'            => 'cube',
+        'device_deployed_bulk'       => 'cubes',
         'device_returned'            => 'undo',
-        'low_stock'                  => 'exclamation-triangle',
-        'repair_needed'              => 'tools',
-        'repair_pending'             => 'tools',
-        'request_approved'           => 'check-circle',
-        'request_rejected'           => 'times-circle',
-        'warranty_expiring'          => 'clock',
-        'user_clearance_required'    => 'file-signature',
-        'user_clearance_completed'   => 'user-check',
-        'user_approval_pending'      => 'user-check',
-        'user_approval_requested'    => 'user-shield',
-        'it_user_created'            => 'user-plus',
-        'it_user_security_granted'   => 'user-shield',
-        'voluntary_return_requested' => 'hand-holding',
-        'maintenance_assigned'       => 'tools',
-        'maintenance_completed'      => 'check-circle',
-        'maintenance_due'            => 'calendar-alt',
-        'lifespan_monitor'           => 'eye',
-        'lifespan_replace_soon'      => 'hourglass-half',
-        'lifespan_overdue'           => 'exclamation-triangle',
-        'lifespan_replaced'          => 'archive',
-        'lifespan_extended'          => 'plus-circle',
-        'device_request'             => 'hand-paper',
+        'device_disposed'            => 'trash-alt',
+        'device_request'             => 'inbox',
         'new_device_added'           => 'plus-circle',
-        default                      => 'info-circle',
+        'warranty_expiring'          => 'exclamation-circle',
+        
+        // Repair & Maintenance
+        'repair_needed'              => 'wrench',
+        'repair_assigned'            => 'hammer',
+        'repair_pending'             => 'hourglass-half',
+        'maintenance_assigned'       => 'screwdriver',
+        'maintenance_completed'      => 'check-circle',
+        'maintenance_due'            => 'calendar-check',
+        
+        // Inventory
+        'low_stock'                  => 'exclamation-triangle',
+        
+        // User & Access Management
+        'user_clearance_required'    => 'file-alt',
+        'user_clearance_completed'   => 'check-square',
+        'user_approval_pending'      => 'clock',
+        'user_approval_requested'    => 'user-check',
+        'it_user_created'            => 'user-plus',
+        'it_user_security_granted'   => 'lock',
+        'new_user_account_created'   => 'user-circle',
+        
+        // Account & Request Management
+        'account_recovery_requested' => 'key',
+        'account_recovery_approved'  => 'check-double',
+        'account_recovery_rejected'  => 'times-circle',
+        'request_approved'           => 'thumbs-up',
+        'request_rejected'           => 'thumbs-down',
+        
+        // Device Returns
+        'voluntary_return_requested' => 'hand-paper',
+        
+        // Device Lifespan
+        'lifespan_monitor'           => 'eye',
+        'lifespan_replace_soon'      => 'history',
+        'lifespan_overdue'           => 'exclamation-triangle',
+        'lifespan_replaced'          => 'recycle',
+        'lifespan_extended'          => 'plus-square',
+        
+        default                      => 'bell',
     };
 }
 
 // Color per notification type
 function getNotificationColor(string $type): string {
     return match(true) {
-        $type === 'lifespan_overdue'             => '#E74C3C',
-        $type === 'lifespan_replace_soon'        => '#E67E22',
-        $type === 'lifespan_monitor'             => '#F39C12',
-        $type === 'lifespan_extended'            => '#3498DB',
-        $type === 'lifespan_replaced'            => '#7F8C8D',
-        $type === 'request_approved'             => '#27AE60',
-        $type === 'request_rejected'             => '#E74C3C',
+        // Device Operations (Blue)
+        $type === 'device_deployed'              => '#3498DB',
+        $type === 'device_deployed_bulk'         => '#2E86DE',
+        $type === 'device_returned'              => '#5DADE2',
+        $type === 'device_disposed'              => '#1F618D',
+        $type === 'device_request'               => '#3498DB',
+        $type === 'new_device_added'             => '#2ECC71',
+        
+        // Repair & Maintenance (Orange)
         $type === 'repair_needed'                => '#E67E22',
+        $type === 'repair_assigned'              => '#E59866',
+        $type === 'repair_completed'             => '#27AE60',
         $type === 'repair_pending'               => '#F39C12',
-        $type === 'warranty_expiring'            => '#F39C12',
-        $type === 'maintenance_assigned'         => '#3498DB',
+        $type === 'maintenance_assigned'         => '#E67E22',
         $type === 'maintenance_completed'        => '#27AE60',
         $type === 'maintenance_due'              => '#E67E22',
-        $type === 'device_deployed'              => '#3498DB',
-        $type === 'device_returned'              => '#27AE60',
-        $type === 'device_request'               => '#9B59B6',
-        $type === 'new_device_added'             => '#2ECC71',
-        $type === 'user_approval_pending'        => '#F39C12',
-        $type === 'user_approval_requested'      => '#F39C12',
-        $type === 'it_user_created'              => '#3498DB',
-        $type === 'it_user_security_granted'     => '#27AE60',
+        $type === 'maintenance_reminder'         => '#F39C12',
+        $type === 'warranty_expiring'            => '#F39C12',
+        
+        // User Management & Security (Green for positive, Purple for control)
+        $type === 'it_user_created'              => '#27AE60',
+        $type === 'it_user_security_granted'     => '#22B14C',
+        $type === 'new_user_account_created'     => '#2ECC71',
+        $type === 'it_clearance'                 => '#8E44AD',
+        
+        // Access & Account Management (Red/Purple)
         str_starts_with($type, 'user_clearance') => '#8E44AD',
         str_starts_with($type, 'account_recovery') => '#E74C3C',
-        default                                  => '#C0392B',
+        $type === 'security_control'             => '#8E44AD',
+        
+        // Request Approvals (Green for approved, Red for rejected)
+        $type === 'request_approved'             => '#27AE60',
+        $type === 'request_rejected'             => '#E74C3C',
+        $type === 'user_approval_pending'        => '#F39C12',
+        $type === 'user_approval_requested'      => '#F39C12',
+        
+        // Device Returns (Teal)
+        $type === 'voluntary_return_requested'   => '#16A085',
+        
+        // Inspections & Issues (Yellow)
+        $type === 'inspection_completed'         => '#F39C12',
+        $type === 'issue_reported'               => '#E74C3C',
+        
+        // Device Lifespan (Gradient: yellow > red)
+        $type === 'lifespan_monitor'             => '#F39C12',
+        $type === 'lifespan_replace_soon'        => '#E67E22',
+        $type === 'lifespan_overdue'             => '#E74C3C',
+        $type === 'lifespan_replaced'            => '#7F8C8D',
+        $type === 'lifespan_extended'            => '#3498DB',
+        
+        // Default
+        default                                  => '#95A5A6',
     };
 }
 
 function getNotificationTypeLabel(string $type): string {
     return match(true) {
+        // Device Operations
         $type === 'device_deployed'            => 'Device Deployed',
+        $type === 'device_deployed_bulk'       => 'Devices Deployed',
         $type === 'device_returned'            => 'Device Returned',
-        $type === 'request_approved'           => 'Request Approved',
-        $type === 'request_rejected'           => 'Request Rejected',
-        $type === 'warranty_expiring'          => 'Warranty Expiring',
-        $type === 'user_clearance_required'    => 'IT Clearance Required',
-        $type === 'user_clearance_completed'   => 'IT Clearance Completed',
-        $type === 'user_approval_pending'      => 'User Approval Pending',
-        $type === 'user_approval_requested'    => 'User Approval Requested',
-        $type === 'it_user_created'            => 'IT User Created',
-        $type === 'it_user_security_granted'   => 'IT Security Granted',
-        $type === 'voluntary_return_requested' => 'Voluntary Return',
+        $type === 'device_disposed'            => 'Device Disposed',
+        $type === 'device_request'             => 'Device Request',
+        $type === 'new_device_added'           => 'New Device Added',
+        
+        // Repair & Maintenance
+        $type === 'repair_needed'              => 'Repair Needed',
+        $type === 'repair_assigned'            => 'Repair Assigned',
+        $type === 'repair_completed'           => 'Repair Completed',
+        $type === 'repair_pending'             => 'Repair Pending',
         $type === 'maintenance_assigned'       => 'Maintenance Assigned',
         $type === 'maintenance_completed'      => 'Maintenance Completed',
         $type === 'maintenance_due'            => 'Maintenance Due',
-        $type === 'lifespan_monitor'           => 'Lifespan Monitor',
-        $type === 'lifespan_replace_soon'      => 'Lifespan Replace Soon',
-        $type === 'lifespan_overdue'           => 'Lifespan Overdue',
-        $type === 'lifespan_replaced'          => 'Lifespan Replaced',
+        $type === 'maintenance_reminder'       => 'Maintenance Reminder',
+        $type === 'warranty_expiring'          => 'Warranty Expiring',
+        
+        // User Management
+        $type === 'it_user_created'            => 'IT User Created',
+        $type === 'it_user_security_granted'   => 'IT Security Granted',
+        $type === 'new_user_account_created'   => 'New User Account Created',
+        
+        // Clearance & Security
+        $type === 'user_clearance_required'    => 'IT Clearance Required',
+        $type === 'user_clearance_completed'   => 'IT Clearance Completed',
+        $type === 'security_control'           => 'Security Control',
+        
+        // Account & Recovery
+        $type === 'account_recovery_requested' => 'Account Recovery Requested',
+        $type === 'account_recovery_approved'  => 'Account Recovery Approved',
+        $type === 'account_recovery_rejected'  => 'Account Recovery Rejected',
+        
+        // Approvals & Requests
+        $type === 'request_approved'           => 'Request Approved',
+        $type === 'request_rejected'           => 'Request Rejected',
+        $type === 'user_approval_pending'      => 'User Approval Pending',
+        $type === 'user_approval_requested'    => 'User Approval Requested',
+        
+        // Returns
+        $type === 'voluntary_return_requested' => 'Voluntary Return Requested',
+        
+        // Inspections & Issues
+        $type === 'inspection_completed'       => 'Inspection Completed',
+        $type === 'issue_reported'             => 'Issue Reported',
+        
+        // Device Lifespan
+        $type === 'lifespan_monitor'           => 'Device Lifespan Monitor',
+        $type === 'lifespan_replace_soon'      => 'Replace Device Soon',
+        $type === 'lifespan_overdue'           => 'Device Replacement Overdue',
+        $type === 'lifespan_replaced'          => 'Device Replaced',
         $type === 'lifespan_extended'          => 'Lifespan Extended',
-        $type === 'device_request'             => 'Device Request',
-        $type === 'new_device_added'           => 'New Device Added',
+        
+        // Default
         default                                => ucwords(str_replace('_', ' ', $type)),
     };
 }
