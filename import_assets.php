@@ -244,8 +244,20 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_FILES['csv_file'])) {
                     $pcName = emptyToNA($row[$headerMap['PC NAME']] ?? '');
                     $type = trim($row[$headerMap['TYPE']] ?? '');
                     $ipAddress = emptyToNA($row[$headerMap['IP ADDRESS']] ?? '');
-                    $status = trim($row[$headerMap['STATUS']] ?? 'deployed');
-                    $assignedTo = emptyToNA($row[$headerMap['ASSIGNED TO']] ?? '');
+
+                    // Normalize ASSIGNED TO and detect truly unassigned values (blank, N/A, Unassigned, or punctuation-only)
+                    $rawAssigned = $row[$headerMap['ASSIGNED TO']] ?? '';
+                    $assignedTo = emptyToNA($rawAssigned);
+                    $assignedClean = trim((string)$assignedTo);
+                    $isUnassigned = (
+                        $assignedClean === '' ||
+                        strtoupper($assignedClean) === 'N/A' ||
+                        strcasecmp($assignedClean, 'Unassigned') === 0 ||
+                        preg_match('/^[\s\.\,\/\-\\]+$/', $assignedClean)
+                    );
+
+                    // Default status to in_stock when device is unassigned; otherwise use provided or 'deployed'
+                    $status = $isUnassigned ? 'in_stock' : trim($row[$headerMap['STATUS']] ?? 'deployed');
                     
                     if (empty($type)) {
                         throw new Exception('Device type is required');
@@ -276,7 +288,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_FILES['csv_file'])) {
 
                     // Determine final PC name when missing and the device is assigned to a user
                     $finalPcName = $pcName;
-                    if (($pcName === 'N/A' || empty($pcName)) && !empty($assignedTo) && $assignedTo !== 'Unassigned' && $assignedTo !== 'N/A') {
+                    if (($pcName === 'N/A' || empty($pcName)) && !$isUnassigned) {
                         $userStmt = $pdo->prepare("SELECT id FROM users WHERE LOWER(full_name) = LOWER(?)");
                         $userStmt->execute([$assignedTo]);
                         $userResult = $userStmt->fetch();
@@ -304,7 +316,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_FILES['csv_file'])) {
                     $devicesCreated++;
                     
                     // Create assignment if assigned to a user
-                    if (!empty($assignedTo) && $assignedTo !== 'Unassigned' && $assignedTo !== 'N/A') {
+                    if (!$isUnassigned) {
                         // Find or create user by name
                         $userStmt = $pdo->prepare("SELECT id FROM users WHERE LOWER(full_name) = LOWER(?)");
                         $userStmt->execute([$assignedTo]);
