@@ -61,7 +61,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             // fetch assignments (all or single)
             if ($singleDevId > 0) {
                 $aStmt = $pdo->prepare("
-                    SELECT da.*, d.asset_tag, d.id AS device_id, d.vendor, dt.type_name
+                    SELECT da.*, d.asset_tag, d.id AS device_id, dt.type_name
                     FROM device_assignments da
                     JOIN devices d ON da.device_id = d.id
                     JOIN device_types dt ON d.device_type_id = dt.id
@@ -70,7 +70,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 $aStmt->execute([$userId, $singleDevId]);
             } else {
                 $aStmt = $pdo->prepare("
-                    SELECT da.*, d.asset_tag, d.id AS device_id, d.vendor, dt.type_name
+                    SELECT da.*, d.asset_tag, d.id AS device_id, dt.type_name
                     FROM device_assignments da
                     JOIN devices d ON da.device_id = d.id
                     JOIN device_types dt ON d.device_type_id = dt.id
@@ -199,11 +199,55 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
                     logAudit($_SESSION['user_id'], 'Clearance Return', 'device_assignments', $a['id'], null,
                         ($singleDevId ? 'Single-device' : 'Full') . ' clearance return');
+
+                    // If device routed to repair, create a repair record so it appears in Repairs UI
+                    if ($newDevStatus === 'under_repair') {
+                        // Ensure repairs schema exists (helper used elsewhere)
+                        if (function_exists('ensureDeviceRepairsSchema')) {
+                            ensureDeviceRepairsSchema();
+                        }
+
+                        try {
+                            $repairStmt = $pdo->prepare("INSERT INTO device_repairs
+                                (device_id, reported_by, issue_description, severity, issue_category, incident_report_file, repair_status, started_date)
+                                VALUES (?, ?, ?, ?, ?, ?, 'pending', NOW())");
+
+                            $repairDesc = "Marked for repair during clearance. " . $returnNotes;
+                            $repairStmt->execute([
+                                $deviceId,
+                                $_SESSION['user_id'] ?? 0,
+                                $repairDesc,
+                                'high', // severity: treat clearance-detected faults as high
+                                'clearance',
+                                null
+                            ]);
+                            $repairId = $pdo->lastInsertId();
+
+                            logAudit($_SESSION['user_id'], 'Auto Create Repair', 'device_repairs', $repairId, null, json_encode(['source'=>'clearance','device'=>$deviceId]));
+
+                            // Notify IT staff (system notification) so it shows up in their workflow
+                            if (function_exists('notifyITStaff')) {
+                                notifyITStaff('repair_needed', 'Repair Needed', 'Device marked for repair during clearance: ' . $a['asset_tag'], $deviceId);
+                            } else {
+                                $itRows = $pdo->query("SELECT id FROM users WHERE role IN ('admin','it_staff') AND status = 'active'")->fetchAll(PDO::FETCH_ASSOC);
+                                foreach ($itRows as $row) {
+                                    if (function_exists('addSystemNotificationOnlyIfNotExists')) {
+                                        addSystemNotificationOnlyIfNotExists($row['id'], 'repair_needed', 'Repair Needed', 'Device marked for repair during clearance: ' . $a['asset_tag'], $repairId);
+                                    }
+                                }
+                            }
+                        } catch (Exception $e) {
+                            // non-fatal: log and continue; we'll surface DB error if bigger transaction fails
+                            error_log('Auto-create repair failed: ' . $e->getMessage());
+                        }
+                    }
                 }
 
                 // Check if validation error occurred
                 if (!empty($errorMessage)) {
-                    $pdo->rollBack();
+                    if ($pdo->inTransaction()) {
+                        $pdo->rollBack();
+                    }
                 } else {
                     // deactivate only on full clearance
                     if ($deactivate) {
@@ -219,6 +263,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                         return $a['asset_tag'];
                     }, $assignments);
                     $deviceList = implode(', ', $deviceTags);
+
+                    // store last clearance details in session so we can render printable copy after redirect
+                    if (session_status() === PHP_SESSION_NONE) session_start();
+                    $_SESSION['last_clearance_processed'] = [
+                        'user' => $user,
+                        'devices' => $assignments,
+                        'device_tags' => $deviceTags,
+                        'device_list' => $deviceList,
+                        'notes' => $notes,
+                        'date' => date('F j, Y'),
+                        'message' => $successMessage ?? ''
+                    ];
 
                     addNotificationIfNotExists(
                         $userId,
@@ -280,7 +336,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 }
 
             } catch (Exception $e) {
-                $pdo->rollBack();
+                if ($pdo->inTransaction()) {
+                    $pdo->rollBack();
+                }
                 $errorMessage = 'Database error: ' . $e->getMessage();
             }
         }
@@ -398,7 +456,7 @@ require_once 'includes/header.php';
             <i class="fas fa-users"></i> Full Employee Clearance
         </a>
         <?php endif; ?>
-        <button class="btn btn-outline no-print" onclick="window.print()">
+        <button class="btn btn-outline no-print" onclick="printClearance()">
             <i class="fas fa-print"></i> Print Clearance Form
         </button>
     </div>
@@ -444,6 +502,143 @@ require_once 'includes/header.php';
                 <button type="submit" class="btn btn-primary">Load User</button>
             </div>
         </form>
+        <!-- Printable PDF-style clearance form (hidden on screen, shown on print) -->
+        <style>
+            /* Print template styles — hide interactive UI when printing */
+            @page { size: A4; margin: 14mm; }
+            @media print {
+                html, body { height: auto !important; }
+                /* hide everything first */
+                body * { visibility: hidden; }
+                /* make printable area visible and ensure it prints on first page */
+                .printable-clearance, .printable-clearance * { visibility: visible; }
+                .printable-clearance { display: block !important; position: relative !important; left: auto !important; top: auto !important; width: auto !important; padding: 0 !important; margin: 0 !important; box-sizing: border-box; }
+                /* remove surrounding UI artifacts */
+                .no-print { display: none !important; }
+            }
+
+            /* Page layout for the printable clearance (screen preview hidden) */
+            .printable-clearance { display: none; font-family: 'Helvetica Neue', Arial, Helvetica, sans-serif; color: #111; background: #fff; }
+            .pc-header { text-align: center; margin-bottom: 10px; }
+            .pc-logo { max-width: 160px; margin: 0 auto 6px; display:block; }
+            .pc-title { font-weight:700; font-size:20px; margin-bottom:6px; letter-spacing:0.6px; }
+            .pc-sub { font-size:12px; margin-bottom:12px; }
+            .pc-meta { width:100%; margin-bottom:12px; font-size:13px; }
+            .pc-meta td { vertical-align: top; padding:4px 6px; }
+            .pc-table { width:100%; border-collapse: collapse; margin-bottom:14px; font-size:12px; }
+            .pc-table th { border:1px solid #000; padding:6px; font-weight:700; text-align:center; }
+            .pc-table td { border-left:1px solid #000; border-right:1px solid #000; padding:6px; }
+            .pc-table tbody tr:first-child td { border-top:1px solid #000; }
+            .pc-table tbody tr:last-child td { border-bottom:1px solid #000; }
+            .pc-remarks { min-height:80px; border:1px solid #000; padding:8px; margin-bottom:18px; }
+            .pc-sigs { display:flex; gap:24px; justify-content:space-between; margin-top:12px; }
+            .pc-sig-box { width:32%; text-align:left; }
+            .pc-sig-line { border-bottom:1px solid #000; height:36px; margin-bottom:6px; }
+            .pc-small { font-size:11px; color:#333; }
+            .pc-checkbox { font-size:16px; line-height:1; }
+        </style>
+
+        <div class="printable-clearance" id="printable-clearance">
+            <div class="pc-header">
+                <img class="pc-logo" src="assets/images/logo.png" alt="KBMC Logo">
+                <div class="pc-title">IT PROPERTY CLEARANCE FORM</div>
+                <div class="pc-sub">Kidapawan Beneficial Multipurpose Cooperative — IT Department</div>
+            </div>
+
+            <?php
+            // If redirected after completion, prefer last clearance stored in session
+            $lastClear = null;
+            if (session_status() === PHP_SESSION_NONE) session_start();
+            if (!empty($_SESSION['last_clearance_processed']) && isset($_GET['done']) && $_GET['done'] == '1') {
+                $lastClear = $_SESSION['last_clearance_processed'];
+            }
+
+            if ($lastClear) {
+                $printDevices = $lastClear['devices'];
+                $printUser = $lastClear['user'];
+            } else {
+                $printDevices = !empty($formDevices) ? $formDevices : $assignedDevices;
+                $printUser = $selectedUser;
+            }
+            ?>
+
+            <table class="pc-meta">
+                <tr>
+                    <td style="width:70%;">
+                        <strong>Name of Employee:</strong> <?php echo sanitize($printUser['full_name'] ?? ''); ?><br>
+                        <strong>Department:</strong> <?php echo sanitize($printUser['department'] ?? ''); ?>
+                    </td>
+                    <td style="width:30%; text-align:right;">
+                        <strong>Control No.:</strong> <?php echo 'IT-' . str_pad($printUser['id'] ?? 0, 6, '0', STR_PAD_LEFT); ?><br>
+                        <strong>Date:</strong> <?php echo htmlspecialchars($lastClear['date'] ?? date('F j, Y')); ?>
+                    </td>
+                </tr>
+            </table>
+
+            <table class="pc-table">
+                <thead>
+                    <tr>
+                        <th style="width:25%;">Property ID</th>
+                        <th style="width:50%;">Type</th>
+                        <th style="width:10%;">Quantity</th>
+                        <th style="width:15%;">Returned</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php
+                    if (empty($printDevices)):
+                    ?>
+                    <tr><td colspan="4" style="text-align:center;padding:18px;">No assigned devices</td></tr>
+                    <?php else:
+                        foreach ($printDevices as $d):
+                            $pid = sanitize($d['asset_tag'] ?? ''); 
+                            $desc = sanitize($d['type_name'] ?? ($d['type_name'] ?? 'Device'));
+                    ?>
+                    <tr>
+                        <td><?php echo $pid; ?></td>
+                        <td><?php echo $desc; ?></td>
+                        <td style="text-align:center;">1</td>
+                        <td></td>
+                    </tr>
+                    <?php endforeach; endif; ?>
+                </tbody>
+            </table>
+
+            <div>
+                <div><strong>Remarks:</strong></div>
+                <div class="pc-remarks"><?php echo nl2br(htmlspecialchars($lastClear['notes'] ?? ($_POST['clearance_notes'] ?? ''))); ?></div>
+            </div>
+
+            <div style="margin-top:10px;">
+                <div>I, ____________________________, hereby acknowledge that I have returned all property/property checked above in good condition for return. Nevertheless, through IT inspection, any problems/issues found, the user can be held accountable and endorsed to the HR Department.</div>
+            </div>
+
+            <div class="pc-sigs" style="margin-top:18px;">
+                <div class="pc-sig-box">
+                    <div class="pc-sig-line"></div>
+                    <div>Employee Signature</div>
+                </div>
+                <div class="pc-sig-box">
+                    <div class="pc-sig-line"></div>
+                    <div>Department Head/OIC</div>
+                </div>
+                <div class="pc-sig-box">
+                    <div class="pc-sig-line"></div>
+                    <div>Checked by (IT)</div>
+                </div>
+            </div>
+        </div>
+            <?php if (!empty($lastClear)): ?>
+                <script>
+                    (function(){
+                        var el = document.getElementById('printable-clearance');
+                        if (el) {
+                            el.style.display = 'block';
+                            setTimeout(function(){ el.scrollIntoView({behavior:'smooth', block:'start'}); }, 150);
+                        }
+                    })();
+                </script>
+            <?php unset($_SESSION['last_clearance_processed']); endif; ?>
     </div>
 </div>
 <?php endif; ?>
@@ -1325,3 +1520,29 @@ window.addEventListener('DOMContentLoaded', function() {
 </script>
 
 <?php require_once 'includes/footer.php'; ?>
+
+<script>
+function printClearance() {
+    var printable = document.querySelector('.printable-clearance');
+    if (!printable) {
+        alert('No printable clearance available. Load a user first.');
+        return;
+    }
+    var html = '<!doctype html><html><head><meta charset="utf-8"><title>IT Property Clearance</title>';
+    html += '<style>';
+    html += 'body{font-family: "Helvetica Neue", Arial, Helvetica, sans-serif; color:#111; padding:20px;}';
+    html += '@page { size: A4; margin: 14mm; }';
+    html += '.pc-header{text-align:center;margin-bottom:10px;} .pc-logo{max-width:160px;display:block;margin:0 auto 6px;} .pc-title{font-weight:700;font-size:20px;margin-bottom:6px;} .pc-sub{font-size:12px;margin-bottom:12px;} .pc-meta{width:100%;margin-bottom:12px;font-size:13px;} .pc-meta td{vertical-align:top;padding:4px 6px;} .pc-table{width:100%;border-collapse:collapse;margin-bottom:14px;font-size:12px;} .pc-table th{border:1px solid #000;padding:6px;font-weight:700;text-align:center;} .pc-table td{border-left:1px solid #000;border-right:1px solid #000;padding:6px;} .pc-table tbody tr:first-child td{border-top:1px solid #000;} .pc-table tbody tr:last-child td{border-bottom:1px solid #000;} .pc-remarks{min-height:80px;border:1px solid #000;padding:8px;margin-bottom:18px;} .pc-sigs{display:flex;gap:24px;justify-content:space-between;margin-top:12px;} .pc-sig-box{width:32%;text-align:left;} .pc-sig-line{border-bottom:1px solid #000;height:36px;margin-bottom:6px;}';
+    html += '</style></head><body>';
+    html += printable.innerHTML;
+    html += '</body></html>';
+
+    var w = window.open('', '_blank');
+    w.document.open();
+    w.document.write(html);
+    w.document.close();
+    w.focus();
+    // give the new window a moment to render
+    setTimeout(function(){ w.print(); /* w.close(); */ }, 250);
+}
+</script>

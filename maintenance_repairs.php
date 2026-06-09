@@ -704,19 +704,17 @@ usort($allMaintenanceMerged, function($a, $b) {
 <?php endif; ?>
 
 <div class="page-title-bar">
-    <h1>
-        <i class="fas fa-tools" style="color:#3b82f6;font-size:18px;"></i>
-        Maintenance & Repairs Management
-    </h1>
-</div>
-
-<!-- Tab Navigation -->
-<div class="tab-navigation">
-    <button class="tab-btn <?php echo $activeTab === 'maintenance' ? 'active' : ''; ?>" onclick="switchTab('maintenance')">
-        <i class="fas fa-calendar-check"></i> Maintenance Schedules
-    </button>
-    <button class="tab-btn <?php echo $activeTab === 'repairs' ? 'active' : ''; ?>" onclick="switchTab('repairs')">
-        <i class="fas fa-tools"></i> Device Repairs
+                <thead>
+                    <tr>
+                        <th>Device</th>
+                        <th>Type</th>
+                        <th>Description</th>
+                        <th>Due Date</th>
+                        <th>Assigned To</th>
+                        <th>Completed</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
     </button>
 </div>
 
@@ -829,6 +827,7 @@ usort($allMaintenanceMerged, function($a, $b) {
                             <br><small style="color:#6b7280;"><?php echo htmlspecialchars($maint['device_type']); ?></small>
                             <?php endif; ?>
                         </td>
+                        <td><?php echo htmlspecialchars($maint['device_type'] ?? $maint['device_type'] ?? '—'); ?></td>
                         <td>
                             <span class="maint-type-badge <?php echo $tc; ?>">
                                 <?php echo str_replace('_', ' ', ucfirst($maint['maintenance_type'])); ?>
@@ -899,6 +898,7 @@ usort($allMaintenanceMerged, function($a, $b) {
                         <td>
                             <span style="font-weight:600;color:#1a2332;"><?php echo htmlspecialchars($maint['asset_tag']); ?></span>
                         </td>
+                        <td><?php echo htmlspecialchars($maint['device_type'] ?? '—'); ?></td>
                         <td>
                             <span class="maint-type-badge type-<?php echo strtolower($maint['maintenance_type']); ?>"><?php echo str_replace('_', ' ', ucfirst($maint['maintenance_type'])); ?></span>
                         </td>
@@ -947,6 +947,7 @@ usort($allMaintenanceMerged, function($a, $b) {
                 <thead>
                     <tr>
                         <th>Device</th>
+                        <th>Type</th>
                         <th>Issue</th>
                         <th>Reported By</th>
                         <th>Assigned To</th>
@@ -965,6 +966,7 @@ usort($allMaintenanceMerged, function($a, $b) {
                         <td>
                             <strong><?php echo sanitize($r['asset_tag']); ?></strong>
                         </td>
+                        <td><?php echo htmlspecialchars($r['type_name'] ?? $r['device_type'] ?? '—'); ?></td>
                         <td>
                             <div><?php echo sanitize($issueSnippet); ?></div>
                             <?php if (!empty($r['incident_report_file']) && file_exists($r['incident_report_file'])): ?>
@@ -1029,6 +1031,7 @@ usort($allMaintenanceMerged, function($a, $b) {
                 <thead>
                     <tr>
                         <th>Device</th>
+                        <th>Type</th>
                         <th>Reported By</th>
                         <th>Assigned To</th>
                         <th>Started</th>
@@ -1043,6 +1046,7 @@ usort($allMaintenanceMerged, function($a, $b) {
                         <td>
                             <strong><?php echo sanitize($r['asset_tag']); ?></strong>
                         </td>
+                        <td><?php echo htmlspecialchars($r['type_name'] ?? $r['device_type'] ?? '—'); ?></td>
                         <td><?php echo sanitize($r['reporter_name']); ?></td>
                         <td>
                             <?php if (!empty($r['assigned_to_name'])): ?>

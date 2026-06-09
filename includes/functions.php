@@ -2294,7 +2294,7 @@ function markRepairAsCompleted($repairId, $completionNotes = '') {
 function getPendingRepairs() {
     global $pdo;
     $sql = "
-        SELECT dr.*, d.asset_tag, dt.type_name, u.full_name as reporter_name, u.email, 
+        SELECT dr.*, d.asset_tag, d.serial_number, d.vendor, dt.type_name, u.full_name as reporter_name, u.email, 
                DATEDIFF(NOW(), dr.started_date) as days_in_repair";
     
     // Include assigned_to info if column exists
@@ -2326,7 +2326,7 @@ function getPendingRepairs() {
 function getCompletedRepairs($limit = 10) {
     global $pdo;
     $sql = "
-        SELECT dr.*, d.asset_tag, dt.type_name, u.full_name as reporter_name,
+        SELECT dr.*, d.asset_tag, d.serial_number, d.vendor, dt.type_name, u.full_name as reporter_name,
                DATEDIFF(dr.completed_date, dr.started_date) as days_to_repair";
     
     // Include assigned_to and completed_by info if columns exist
@@ -2373,7 +2373,7 @@ function getCompletedMaintenance($limit = 10) {
     $hasRequestedBy = columnExists('maintenance_schedules', 'requested_by');
     
     // Build SELECT clause
-    $selectCols = "ms.id, ms.device_id, ms.maintenance_type, ms.description, ms.assigned_to, ms.last_performed_date, d.asset_tag, dt.type_name AS device_type";
+    $selectCols = "ms.id, ms.device_id, ms.maintenance_type, ms.description, ms.assigned_to, ms.last_performed_date, d.asset_tag, d.serial_number, d.vendor, dt.type_name AS device_type";
     
     // Add optional columns
     if ($hasCompletedAt) {
