@@ -688,6 +688,17 @@ usort($allMaintenanceMerged, function($a, $b) {
     margin-top: 6px;
 }
 
+/* For dispose modal: place Cancel immediately left of primary action */
+.dispose-modal .modal-box {
+    padding-bottom: 22px;
+}
+.dispose-modal .form-footer {
+    justify-content: flex-end;
+    align-items: center;
+    padding: 12px 24px;
+    gap: 12px;
+}
+
 .action-btns {
     display: flex;
     gap: 4px;
@@ -704,18 +715,11 @@ usort($allMaintenanceMerged, function($a, $b) {
 <?php endif; ?>
 
 <div class="page-title-bar">
-                <thead>
-                    <tr>
-                        <th>Device</th>
-                        <th>Type</th>
-                        <th>Description</th>
-                        <th>Due Date</th>
-                        <th>Assigned To</th>
-                        <th>Completed</th>
-                        <th>Actions</th>
-                    </tr>
-                </thead>
-    </button>
+    <h1>Maintenance & Repairs</h1>
+    <div class="tab-navigation">
+        <button type="button" class="tab-btn <?php echo $activeTab === 'maintenance' ? 'active' : ''; ?>" onclick="switchTab('maintenance', this)">Maintenance</button>
+        <button type="button" class="tab-btn <?php echo $activeTab === 'repairs' ? 'active' : ''; ?>" onclick="switchTab('repairs', this)">Repairs</button>
+    </div>
 </div>
 
 <!-- ═══════════════════════════════════════════════════════════
@@ -1002,6 +1006,9 @@ usort($allMaintenanceMerged, function($a, $b) {
                             </button>
                             <button onclick="markRepairDone(event, <?php echo $r['id']; ?>, '<?php echo sanitize($r['asset_tag']); ?>')" class="btn btn-sm btn-success" title="Mark as Complete">
                                 <i class="fas fa-check"></i>
+                            </button>
+                            <button onclick="markRepairUnrepairable(event, <?php echo $r['id']; ?>, <?php echo $r['device_id']; ?>, '<?php echo sanitize($r['asset_tag']); ?>')" class="btn btn-sm btn-danger" title="Mark as Unrepairable & Dispose">
+                                <i class="fas fa-times"></i>
                             </button>
                             <a href="view_device.php?id=<?php echo $r['device_id']; ?>" class="btn btn-sm btn-secondary" title="View Device">
                                 <i class="fas fa-eye"></i>
@@ -1335,6 +1342,41 @@ usort($allMaintenanceMerged, function($a, $b) {
 
 <input type="hidden" id="repairIdToMark">
 
+<!-- Mark Repair Unrepairable & Dispose Modal -->
+<div id="unreparableModal" class="modal-overlay">
+    <div class="modal-box dispose-modal">
+        <div class="modal-header">
+            <h3><i class="fas fa-exclamation-triangle" style="color: #ef4444;"></i> Mark as Unrepairable & Dispose</h3>
+            <button type="button" class="modal-close" onclick="closeUnreparableModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <div style="background: #fef2f2; border: 1px solid #fed7d7; border-radius: 8px; padding: 12px; margin-bottom: 16px; color: #991b1b;">
+                <i class="fas fa-warning" style="margin-right: 8px;"></i>
+                <strong>Warning:</strong> This action will mark the device as unrepairable and move it to disposed status.
+            </div>
+            <div class="form-group">
+                <label for="unreparableAssignedTo">Handled By IT Staff <span class="req">*</span></label>
+                <select id="unreparableAssignedTo" class="form-control" style="padding: 10px 12px; border: 1.5px solid #dde1e7; border-radius: 7px; font-size: 14px; color: #374151; background: white;">
+                    <option value="">— Select IT Staff Member —</option>
+                    <?php foreach ($itStaff as $staff): ?>
+                        <option value="<?php echo $staff['id']; ?>"><?php echo htmlspecialchars($staff['full_name']); ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="unreparableNotes">Disposal Notes <span class="req">*</span></label>
+                <textarea id="unreparableNotes" class="form-control" placeholder="Explain why this device cannot be repaired..." rows="4" style="resize: vertical;"></textarea>
+            </div>
+        </div>
+        <div class="form-footer">
+            <button type="button" class="btn btn-secondary" onclick="closeUnreparableModal()">Cancel</button>
+            <button type="button" class="btn btn-danger" onclick="submitDisposeRepair()">Mark as Disposed</button>
+        </div>
+    </div>
+</div>
+
+<input type="hidden" id="deviceIdToDispose">
+
 <!-- Attachment Viewer Modal -->
 <div id="attachmentViewerModal" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 2000; align-items: center; justify-content: center; padding: 20px; box-sizing: border-box;">
     <div style="background: white; border-radius: 12px; width: 100%; max-width: 700px; max-height: 85vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.3);">
@@ -1367,7 +1409,7 @@ usort($allMaintenanceMerged, function($a, $b) {
 // ─────────────────────────────────────────────────────────────
 // TAB SWITCHING
 // ─────────────────────────────────────────────────────────────
-function switchTab(tabName) {
+function switchTab(tabName, button) {
     // Hide all tabs
     document.getElementById('maintenance-tab').classList.remove('active');
     document.getElementById('repairs-tab').classList.remove('active');
@@ -1377,7 +1419,9 @@ function switchTab(tabName) {
     
     // Show selected tab and activate button
     document.getElementById(tabName + '-tab').classList.add('active');
-    event.target.classList.add('active');
+    if (button) {
+        button.classList.add('active');
+    }
     
     // Update URL
     window.history.replaceState({}, '', '?tab=' + tabName);
@@ -1645,12 +1689,90 @@ function submitRepairCompletion() {
     });
 }
 
+function markRepairUnrepairable(e, repairId, deviceId, assetTag) {
+    e.preventDefault();
+    document.getElementById('repairIdToMark').value = repairId;
+    document.getElementById('deviceIdToDispose').value = deviceId;
+    document.getElementById('unreparableAssignedTo').value = '';
+    document.getElementById('unreparableNotes').value = '';
+    document.getElementById('unreparableModal').classList.add('open');
+    setTimeout(function() {
+        document.getElementById('unreparableAssignedTo').focus();
+    }, 100);
+}
+
+function closeUnreparableModal() {
+    document.getElementById('unreparableModal').classList.remove('open');
+}
+
+function submitDisposeRepair() {
+    const repairId = document.getElementById('repairIdToMark').value;
+    const deviceId = document.getElementById('deviceIdToDispose').value;
+    const assignedTo = document.getElementById('unreparableAssignedTo').value;
+    const notes = document.getElementById('unreparableNotes').value.trim();
+    
+    if (!assignedTo) {
+        alert('Please select an IT staff member to handle the disposal.');
+        document.getElementById('unreparableAssignedTo').focus();
+        return;
+    }
+    
+    if (!notes) {
+        alert('Please provide a reason for disposal.');
+        document.getElementById('unreparableNotes').focus();
+        return;
+    }
+    
+    if (!confirm('Are you sure? This will mark the device as unrepairable and move it to disposed status.')) {
+        return;
+    }
+    
+    fetch('api_dispose_unrepairable_device.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ repair_id: repairId, device_id: deviceId, assigned_to: assignedTo, notes: notes })
+    })
+    .then(async response => {
+        const text = await response.text();
+        try {
+            const data = JSON.parse(text);
+            return { ok: true, status: response.status, data };
+        } catch (err) {
+            // Return raw text for debugging
+            return { ok: false, status: response.status, text };
+        }
+    })
+    .then(result => {
+        if (!result.ok) {
+            console.error('Non-JSON response from dispose API (status ' + result.status + '):', result.text);
+            alert('Failed to dispose device: Unexpected response from server. See console for details.');
+            return;
+        }
+
+        const data = result.data;
+        if (data.success) {
+            alert('Device marked as unrepairable and disposed successfully.');
+            location.reload();
+        } else {
+            alert('Error: ' + (data.message || 'Failed to process'));
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Failed to dispose device: ' + error.message);
+    });
+}
+
 document.getElementById('repairFormModal')?.addEventListener('click', function(e) {
     if (e.target === this) closeRepairForm();
 });
 
 document.getElementById('markDoneModal')?.addEventListener('click', function(e) {
     if (e.target === this) closeMarkDone();
+});
+
+document.getElementById('unreparableModal')?.addEventListener('click', function(e) {
+    if (e.target === this) closeUnreparableModal();
 });
 
 // ─────────────────────────────────────────────────────────────
