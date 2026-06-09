@@ -1732,24 +1732,8 @@ function submitDisposeRepair() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ repair_id: repairId, device_id: deviceId, assigned_to: assignedTo, notes: notes })
     })
-    .then(async response => {
-        const text = await response.text();
-        try {
-            const data = JSON.parse(text);
-            return { ok: true, status: response.status, data };
-        } catch (err) {
-            // Return raw text for debugging
-            return { ok: false, status: response.status, text };
-        }
-    })
-    .then(result => {
-        if (!result.ok) {
-            console.error('Non-JSON response from dispose API (status ' + result.status + '):', result.text);
-            alert('Failed to dispose device: Unexpected response from server. See console for details.');
-            return;
-        }
-
-        const data = result.data;
+    .then(response => response.json())
+    .then(data => {
         if (data.success) {
             alert('Device marked as unrepairable and disposed successfully.');
             location.reload();

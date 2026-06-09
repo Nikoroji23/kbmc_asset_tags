@@ -8,8 +8,9 @@
 
 header('Content-Type: application/json');
 
-require_once 'includes/header.php';
+require_once 'includes/functions.php';
 
+// Require user to be IT staff (functions.php will handle sessions)
 requireITStaff();
 
 // Get POST data
@@ -78,13 +79,15 @@ try {
     $updateDevice->execute(['disposed', $assignedTo, $deviceId]);
 
     // Log the disposal action in audit log (if available)
-    if (function_exists('logActivityAudit')) {
-        logActivityAudit($deviceId, 'device_disposal', 'Device marked as unrepairable and disposed', [
+    // Add an audit_logs entry recording the disposal performed by the selected IT staff
+    if (function_exists('logAudit')) {
+        $newValues = json_encode([
             'repair_id' => $repairId,
             'disposal_reason' => $notes,
-            'assigned_to' => $assignedTo,
-            'user_id' => $_SESSION['user_id']
+            'disposed_by' => $assignedTo
         ]);
+        // Use the assigned IT staff as the user_id for the audit entry so filters work in asset_tag_audit.php
+        logAudit($assignedTo, 'Dispose', 'devices', $deviceId, null, $newValues, 'disposal');
     }
 
     $pdo->commit();
