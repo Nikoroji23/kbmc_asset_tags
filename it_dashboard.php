@@ -143,13 +143,13 @@ ORDER BY total DESC")->fetchAll();
         <a href="inspections.php" class="btn btn-warning" style="flex: 1; min-width: 150px;">
             <i class="fas fa-clipboard-check"></i> Inspect Device
         </a>
-        <a href="repairs.php" class="btn btn-danger" style="flex: 1; min-width: 150px;">
+        <a href="maintenance_repairs.php?tab=repairs" class="btn btn-danger" style="flex: 1; min-width: 150px;">
             <i class="fas fa-tools"></i> Manage Repairs
         </a>
-        <a href="deployments.php" class="btn btn-success" style="flex: 1; min-width: 150px;">
+        <a href="deployments.php?action=assign" class="btn btn-success" style="flex: 1; min-width: 150px;">
             <i class="fas fa-hand-holding"></i> Deploy Device
         </a>
-        <a href="maintenance_reminders.php" class="btn btn-info" style="flex: 1; min-width: 150px;">
+        <a href="maintenance_repairs.php" class="btn btn-info" style="flex: 1; min-width: 150px;">
             <i class="fas fa-calendar-check"></i> Maintenance
         </a>
         <a href="it_clearance.php" class="btn btn-danger" style="flex: 1; min-width: 150px;">
