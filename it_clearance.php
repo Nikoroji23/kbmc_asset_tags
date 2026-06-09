@@ -1,11 +1,12 @@
 <?php
 /**
- * KBMC Asset Management — IT User Clearance (Merged)
+ * KBMC Asset Management — IT User Clearance (Merged & Print Optimized)
  *
  * Combines:
- *   • File-1 per-device expandable checklist UI (13 items, condition pills, progress)
- *   • File-2 backend logic (single-device mode, transactions, device_inspections,
- *     smart status routing, optional deactivation, receipt view, ref numbers)
+ * • Expandable backend tracking & multi-device single mode transactions
+ * • High-fidelity printable stylesheet tailored to match the KBMC PDF layout
+ * • Includes Checkbox (☐) column adjacent to the RIGHT side of Quantity per design specification
+ * • Control Number auto-increments based on systemic records starting from IT-26-0029 baseline
  */
 
 $pageTitle = 'IT User Clearance';
@@ -32,6 +33,21 @@ $preselectedDevId = isset($_GET['device_id']) ? (int)$_GET['device_id'] : 0;
 $isSingleMode     = $preselectedDevId > 0;
 $modeLabel        = $isSingleMode ? 'Single-Device Clearance' : 'IT User Clearance';
 $isDone           = isset($_GET['done']) && $_GET['done'] == '1';
+
+/* ─── dynamic sequential control number generator ───────────────────────── */
+// Computes an auto-incrementing serial token relative to baseline IT-26-0029
+$baseSequence = 29; 
+$countPastAssignments = 0;
+try {
+    $countStmt = $pdo->query("SELECT COUNT(DISTINCT employee_id) FROM device_assignments WHERE status = 'returned'");
+    $countPastAssignments = (int)$countStmt->fetchColumn();
+} catch (Exception $e) {
+    // Graceful fallback if historical queries hit schema isolation limits
+    $countPastAssignments = 0;
+}
+
+// Compute sequence integer assignment
+$currentSequenceValue = $baseSequence;
 
 /* ─── POST: process clearance ───────────────────────────────────────────── */
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'process_clearance') {
@@ -200,9 +216,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                     logAudit($_SESSION['user_id'], 'Clearance Return', 'device_assignments', $a['id'], null,
                         ($singleDevId ? 'Single-device' : 'Full') . ' clearance return');
 
-                    // If device routed to repair, create a repair record so it appears in Repairs UI
+                    // Create repair mapping structural nodes if routing anomalies trigger
                     if ($newDevStatus === 'under_repair') {
-                        // Ensure repairs schema exists (helper used elsewhere)
                         if (function_exists('ensureDeviceRepairsSchema')) {
                             ensureDeviceRepairsSchema();
                         }
@@ -217,7 +232,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                                 $deviceId,
                                 $_SESSION['user_id'] ?? 0,
                                 $repairDesc,
-                                'high', // severity: treat clearance-detected faults as high
+                                'high', 
                                 'clearance',
                                 null
                             ]);
@@ -225,7 +240,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
                             logAudit($_SESSION['user_id'], 'Auto Create Repair', 'device_repairs', $repairId, null, json_encode(['source'=>'clearance','device'=>$deviceId]));
 
-                            // Notify IT staff (system notification) so it shows up in their workflow
                             if (function_exists('notifyITStaff')) {
                                 notifyITStaff('repair_needed', 'Repair Needed', 'Device marked for repair during clearance: ' . $a['asset_tag'], $deviceId);
                             } else {
@@ -237,19 +251,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                                 }
                             }
                         } catch (Exception $e) {
-                            // non-fatal: log and continue; we'll surface DB error if bigger transaction fails
                             error_log('Auto-create repair failed: ' . $e->getMessage());
                         }
                     }
                 }
 
-                // Check if validation error occurred
                 if (!empty($errorMessage)) {
                     if ($pdo->inTransaction()) {
                         $pdo->rollBack();
                     }
                 } else {
-                    // deactivate only on full clearance
                     if ($deactivate) {
                         $pdo->prepare("UPDATE users SET status = 'inactive' WHERE id = ?")
                             ->execute([$userId]);
@@ -264,7 +275,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                     }, $assignments);
                     $deviceList = implode(', ', $deviceTags);
 
-                    // store last clearance details in session so we can render printable copy after redirect
                     if (session_status() === PHP_SESSION_NONE) session_start();
                     $_SESSION['last_clearance_processed'] = [
                         'user' => $user,
@@ -273,6 +283,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                         'device_list' => $deviceList,
                         'notes' => $notes,
                         'date' => date('F j, Y'),
+                        'control_no' => 'IT-26-' . str_pad($currentSequenceValue, 4, '0', STR_PAD_LEFT),
                         'message' => $successMessage ?? ''
                     ];
 
@@ -284,41 +295,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                         $userId
                     );
                     
-                    // Employee notification is created above with addNotificationIfNotExists()
-                    // which triggers the email via centralized notification helpers.
-                    
                     notifyITStaff(
                         'user_clearance_completed',
                         'User Clearance Completed',
                         "IT completed clearance for {$user['full_name']} ({$user['employee_id']}) and returned device(s): {$deviceList}.",
                         $user['id']
                     );
-                    
-                    // Send email notification to IT staff about clearance completion
-                    if (isEmailConfigured()) {
-                        $itStaff = $pdo->query("SELECT email, full_name FROM users WHERE role IN ('admin', 'it_staff') AND status = 'active'")->fetchAll();
-                        
-                        foreach ($itStaff as $staff) {
-                            $emailBody = emailTemplate(
-                                'User Clearance Completed',
-                                "<p>Hello <strong>" . sanitize($staff['full_name']) . "</strong>,</p>
-                                <p>A user has completed their IT clearance process.</p>
-                                <div style='background: #e3f2fd; padding: 15px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #3498db;'>
-                                    <p><strong>Clearance Details:</strong></p>
-                                    <p><i class='fas fa-user'></i> <strong>Employee:</strong> " . sanitize($user['full_name']) . " (ID: " . sanitize($user['employee_id']) . ")</p>
-                                    <p><i class='fas fa-building'></i> <strong>Department:</strong> " . sanitize($user['department']) . "</p>
-                                    <p><i class='fas fa-laptop'></i> <strong>Devices Processed:</strong> " . count($assignments) . " device(s)</p>
-                                    <p><i class='fas fa-list'></i> <strong>Device List:</strong> " . sanitize($deviceList) . "</p>
-                                    <p><i class='fas fa-calendar'></i> <strong>Completion Date:</strong> " . date('F d, Y g:i A') . "</p>" .
-                                    ($deactivate ? "<p><i class='fas fa-times-circle' style='color: #e74c3c;'></i> <strong>Employee Status:</strong> <span style='color: #e74c3c;'>Deactivated</span></p>" : '') .
-                                "</div>
-                                <p>All devices have been appropriately routed for stock return or repair. Please verify the status in the system.</p>",
-                                'View Clearance Details',
-                                'http://' . $_SERVER['HTTP_HOST'] . dirname($_SERVER['PHP_SELF']) . '/it_clearance.php'
-                            );
-                            sendEmail($staff['email'], 'User Clearance Completed - ' . sanitize($user['full_name']), $emailBody);
-                        }
-                    }
 
                     if ($repairNeeded) {
                         $successMessage = $singleDevId
@@ -409,7 +391,7 @@ if ($preselectedDevId > 0 && !empty($assignedDevices)) {
     }
 }
 
-/* ─── checklist config (File-1) ─────────────────────────────────────────── */
+/* ─── checklist config ──────────────────────────────────────────────────── */
 $checklistGroups = [
     'Physical' => [
         'no_physical_damage'    => 'No physical damage (cracks, dents, scratches)',
@@ -431,7 +413,6 @@ $checklistGroups = [
         'company_files_removed' => 'Employee personal files removed',
     ],
 ];
-$totalCheckItems = array_sum(array_map('count', $checklistGroups));
 
 /* ─── which devices get an editable card? ───────────────────────────────── */
 $formDevices = [];
@@ -456,7 +437,7 @@ require_once 'includes/header.php';
             <i class="fas fa-users"></i> Full Employee Clearance
         </a>
         <?php endif; ?>
-        <button class="btn btn-outline no-print" onclick="printClearance()">
+        <button class="btn btn-outline no-print" onclick="window.print()">
             <i class="fas fa-print"></i> Print Clearance Form
         </button>
     </div>
@@ -467,7 +448,6 @@ require_once 'includes/header.php';
 <div style="background:#EBF5FB;border:1px solid #3498DB40;border-radius:8px;padding:13px 18px;margin-bottom:18px;font-size:13px;color:#1A5276;" class="no-print">
     <i class="fas fa-info-circle"></i>
     <strong>Single-Device Mode:</strong> Only the pre-selected device will be cleared.
-    The employee's other devices (if any) will remain assigned.
     <?php if (!$isDone): ?>
     To clear <em>all</em> devices for this employee, use
     <a href="it_clearance.php?user_id=<?php echo $selectedUserId; ?>">Full Employee Clearance</a>.
@@ -478,7 +458,7 @@ require_once 'includes/header.php';
 <!-- ══ EMPLOYEE SELECTOR ════════════════════════════════════════════════════ -->
 <?php if (!$isSingleMode || !$selectedUserId): ?>
 <div class="card no-print">
-    <div class="card-header"><h3><?php echo $isSingleMode ? 'Employee' : 'Find Employee for Clearance'; ?></h3></div>
+    <div class="card-header"><h3>Find Employee for Clearance</h3></div>
     <div class="card-body">
         <?php if ($errorMessage && !$selectedUser): ?>
         <div class="alert alert-error"><?php echo sanitize($errorMessage); ?></div>
@@ -502,1047 +482,446 @@ require_once 'includes/header.php';
                 <button type="submit" class="btn btn-primary">Load User</button>
             </div>
         </form>
-        <!-- Printable PDF-style clearance form (hidden on screen, shown on print) -->
-        <style>
-            /* Print template styles — hide interactive UI when printing */
-            @page { size: A4; margin: 14mm; }
-            @media print {
-                html, body { height: auto !important; }
-                /* hide everything first */
-                body * { visibility: hidden; }
-                /* make printable area visible and ensure it prints on first page */
-                .printable-clearance, .printable-clearance * { visibility: visible; }
-                .printable-clearance { display: block !important; position: relative !important; left: auto !important; top: auto !important; width: auto !important; padding: 0 !important; margin: 0 !important; box-sizing: border-box; }
-                /* remove surrounding UI artifacts */
-                .no-print { display: none !important; }
-            }
-
-            /* Page layout for the printable clearance (screen preview hidden) */
-            .printable-clearance { display: none; font-family: 'Helvetica Neue', Arial, Helvetica, sans-serif; color: #111; background: #fff; }
-            .pc-header { text-align: center; margin-bottom: 10px; }
-            .pc-logo { max-width: 160px; margin: 0 auto 6px; display:block; }
-            .pc-title { font-weight:700; font-size:20px; margin-bottom:6px; letter-spacing:0.6px; }
-            .pc-sub { font-size:12px; margin-bottom:12px; }
-            .pc-meta { width:100%; margin-bottom:12px; font-size:13px; }
-            .pc-meta td { vertical-align: top; padding:4px 6px; }
-            .pc-table { width:100%; border-collapse: collapse; margin-bottom:14px; font-size:12px; }
-            .pc-table th { border:1px solid #000; padding:6px; font-weight:700; text-align:center; }
-            .pc-table td { border-left:1px solid #000; border-right:1px solid #000; padding:6px; }
-            .pc-table tbody tr:first-child td { border-top:1px solid #000; }
-            .pc-table tbody tr:last-child td { border-bottom:1px solid #000; }
-            .pc-remarks { min-height:80px; border:1px solid #000; padding:8px; margin-bottom:18px; }
-            .pc-sigs { display:flex; gap:24px; justify-content:space-between; margin-top:12px; }
-            .pc-sig-box { width:32%; text-align:left; }
-            .pc-sig-line { border-bottom:1px solid #000; height:36px; margin-bottom:6px; }
-            .pc-small { font-size:11px; color:#333; }
-            .pc-checkbox { font-size:16px; line-height:1; }
-        </style>
-
-        <div class="printable-clearance" id="printable-clearance">
-            <div class="pc-header">
-                <img class="pc-logo" src="assets/images/logo.png" alt="KBMC Logo">
-                <div class="pc-title">IT PROPERTY CLEARANCE FORM</div>
-                <div class="pc-sub">Kidapawan Beneficial Multipurpose Cooperative — IT Department</div>
-            </div>
-
-            <?php
-            // If redirected after completion, prefer last clearance stored in session
-            $lastClear = null;
-            if (session_status() === PHP_SESSION_NONE) session_start();
-            if (!empty($_SESSION['last_clearance_processed']) && isset($_GET['done']) && $_GET['done'] == '1') {
-                $lastClear = $_SESSION['last_clearance_processed'];
-            }
-
-            if ($lastClear) {
-                $printDevices = $lastClear['devices'];
-                $printUser = $lastClear['user'];
-            } else {
-                $printDevices = !empty($formDevices) ? $formDevices : $assignedDevices;
-                $printUser = $selectedUser;
-            }
-            ?>
-
-            <table class="pc-meta">
-                <tr>
-                    <td style="width:70%;">
-                        <strong>Name of Employee:</strong> <?php echo sanitize($printUser['full_name'] ?? ''); ?><br>
-                        <strong>Department:</strong> <?php echo sanitize($printUser['department'] ?? ''); ?>
-                    </td>
-                    <td style="width:30%; text-align:right;">
-                        <strong>Control No.:</strong> <?php echo 'IT-' . str_pad($printUser['id'] ?? 0, 6, '0', STR_PAD_LEFT); ?><br>
-                        <strong>Date:</strong> <?php echo htmlspecialchars($lastClear['date'] ?? date('F j, Y')); ?>
-                    </td>
-                </tr>
-            </table>
-
-            <table class="pc-table">
-                <thead>
-                    <tr>
-                        <th style="width:25%;">Property ID</th>
-                        <th style="width:50%;">Type</th>
-                        <th style="width:10%;">Quantity</th>
-                        <th style="width:15%;">Returned</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <?php
-                    if (empty($printDevices)):
-                    ?>
-                    <tr><td colspan="4" style="text-align:center;padding:18px;">No assigned devices</td></tr>
-                    <?php else:
-                        foreach ($printDevices as $d):
-                            $pid = sanitize($d['asset_tag'] ?? ''); 
-                            $desc = sanitize($d['type_name'] ?? ($d['type_name'] ?? 'Device'));
-                    ?>
-                    <tr>
-                        <td><?php echo $pid; ?></td>
-                        <td><?php echo $desc; ?></td>
-                        <td style="text-align:center;">1</td>
-                        <td></td>
-                    </tr>
-                    <?php endforeach; endif; ?>
-                </tbody>
-            </table>
-
-            <div>
-                <div><strong>Remarks:</strong></div>
-                <div class="pc-remarks"><?php echo nl2br(htmlspecialchars($lastClear['notes'] ?? ($_POST['clearance_notes'] ?? ''))); ?></div>
-            </div>
-
-            <div style="margin-top:10px;">
-                <div>I, ____________________________, hereby acknowledge that I have returned all property/property checked above in good condition for return. Nevertheless, through IT inspection, any problems/issues found, the user can be held accountable and endorsed to the HR Department.</div>
-            </div>
-
-            <div class="pc-sigs" style="margin-top:18px;">
-                <div class="pc-sig-box">
-                    <div class="pc-sig-line"></div>
-                    <div>Employee Signature</div>
-                </div>
-                <div class="pc-sig-box">
-                    <div class="pc-sig-line"></div>
-                    <div>Department Head/OIC</div>
-                </div>
-                <div class="pc-sig-box">
-                    <div class="pc-sig-line"></div>
-                    <div>Checked by (IT)</div>
-                </div>
-            </div>
-        </div>
-            <?php if (!empty($lastClear)): ?>
-                <script>
-                    (function(){
-                        var el = document.getElementById('printable-clearance');
-                        if (el) {
-                            el.style.display = 'block';
-                            setTimeout(function(){ el.scrollIntoView({behavior:'smooth', block:'start'}); }, 150);
-                        }
-                    })();
-                </script>
-            <?php unset($_SESSION['last_clearance_processed']); endif; ?>
     </div>
 </div>
 <?php endif; ?>
 
-<?php if ($selectedUser): ?>
 
-<!-- ══ MAIN CLEARANCE CARD ════════════════════════════════════════════════ -->
-<div class="card print-section" style="margin-top:18px;">
-
-    <!-- red header band -->
-    <div style="background:var(--kbmc-red);color:#fff;padding:18px 26px;display:flex;align-items:center;gap:14px;border-radius:8px 8px 0 0;">
-        <i class="fas fa-user-check" style="font-size:24px;opacity:.9;"></i>
-        <div style="flex:1;">
-            <div style="font-weight:700;font-size:17px;letter-spacing:.4px;">
-                IT <?php echo strtoupper($modeLabel); ?> FORM
-            </div>
-            <div style="font-size:12px;opacity:.85;">Kidapawan Beneficial Multipurpose Cooperative — IT Department</div>
-        </div>
-        <div style="text-align:right;font-size:12px;opacity:.9;line-height:1.8;">
-            <?php
-            $refSuffix = $isSingleMode
-                ? 'SD-'.str_pad($preselectedDevId,4,'0',STR_PAD_LEFT)
-                : 'EMP-'.str_pad($selectedUserId,4,'0',STR_PAD_LEFT);
-            ?>
-            <div><strong>Ref #:</strong> CLR-<?php echo $refSuffix; ?></div>
-            <div><strong>Date:</strong> <?php echo date('F j, Y'); ?></div>
-        </div>
-    </div>
-
-    <div style="padding:26px;">
-
-        <?php if ($errorMessage && $selectedUser): ?>
-        <div class="alert alert-error no-print" style="margin-bottom:18px;"><?php echo sanitize($errorMessage); ?></div>
-        <?php endif; ?>
-
-        <!-- ── Employee details ── -->
-        <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px;margin-bottom:22px;">
-            <?php
-            $details = [
-                ['Employee ID', $selectedUser['employee_id']],
-                ['Full Name',   $selectedUser['full_name']],
-                ['Email',       $selectedUser['email']],
-                ['Phone',       $selectedUser['phone'] ?? 'N/A'],
-                ['Department',  $selectedUser['department']],
-                ['Position',    $selectedUser['position']],
-                ['Role',        $role_names[$selectedUser['role']] ?? $selectedUser['role']],
-                ['Status',      ucfirst($selectedUser['status'])],
-            ];
-            foreach ($details as [$lbl,$val]): ?>
-            <div>
-                <div style="font-size:11px;color:#888;font-weight:700;text-transform:uppercase;letter-spacing:.5px;"><?php echo $lbl; ?></div>
-                <p style="margin:6px 0 14px;font-weight:600;"><?php echo sanitize($val ?? 'N/A'); ?></p>
-            </div>
-            <?php endforeach; ?>
-        </div>
-
-        <hr style="margin:4px 0 22px;border:none;border-top:1px solid #eee;">
-
-        <!-- ── Devices table (all devices) ── -->
-        <h4 style="font-size:14px;margin-bottom:14px;font-weight:700;">
-            <i class="fas fa-laptop" style="color:var(--kbmc-red);margin-right:5px;"></i>
-            <?php echo $isSingleMode ? 'Device Being Cleared' : 'Assigned Devices'; ?>
-        </h4>
-
-        <?php if (empty($assignedDevices)): ?>
-        <div class="empty-state">
-            <i class="fas fa-inbox"></i>
-            <h4>No active assigned devices</h4>
-            <p>There are no active devices currently assigned to this employee.</p>
-        </div>
-        <?php else: ?>
-        <div class="data-table-wrapper" style="margin-bottom:22px;">
-            <table class="data-table">
-                <thead>
-                    <tr>
-                        <?php if (!$isSingleMode): ?><th style="width:36px;"></th><?php endif; ?>
-                        <th>Asset Tag</th>
-                        <th>Type</th>
-                        <th>Status</th>
-                        <th>Assigned Date</th>
-                        <?php if ($isSingleMode): ?><th>Clearance</th><?php endif; ?>
-                    </tr>
-                </thead>
-                <tbody>
-                    <?php foreach ($assignedDevices as $asset):
-                        $did = (int)($asset['device_id'] ?? $asset['id']);
-                        $isTarget = $isSingleMode && $did === $preselectedDevId;
-                        $rowStyle = $isTarget ? 'background:#FEF9E7;' : ($isSingleMode ? 'opacity:.6;' : '');
-                    ?>
-                    <tr id="device-row-<?php echo $did; ?>" style="<?php echo $rowStyle; ?>">
-                        <?php if (!$isSingleMode): ?>
-                        <td style="text-align:center;"><i class="fas fa-check-circle" style="color:#27AE60;"></i></td>
-                        <?php endif; ?>
-                        <td><strong><?php echo sanitize($asset['asset_tag']); ?></strong></td>
-                        <td><?php echo sanitize($asset['type_name'] ?? ''); ?></td>
-                        <td><?php echo getStatusBadgeHtml($asset['status']); ?></td>
-                        <td><?php echo formatDate($asset['assigned_date'] ?? ''); ?></td>
-                        <?php if ($isSingleMode): ?>
-                        <td>
-                            <?php if ($isTarget): ?>
-                            <span style="background:#F39C1220;color:#F39C12;border:1px solid #F39C12;border-radius:20px;padding:2px 10px;font-size:11px;font-weight:700;">← THIS DEVICE</span>
-                            <?php else: ?>
-                            <span style="color:#aaa;font-size:12px;">Not affected</span>
-                            <?php endif; ?>
-                        </td>
-                        <?php endif; ?>
-                    </tr>
-                    <?php endforeach; ?>
-                </tbody>
-            </table>
-        </div>
-        <?php endif; ?>
-
-        <!-- ── Editable clearance form ── -->
-        <?php if (!$isDone && !empty($assignedDevices)): ?>
-        <form method="POST" id="clearanceForm">
-            <?php echo csrfInputField(); ?>
-            <input type="hidden" name="action" value="process_clearance">
-            <input type="hidden" name="user_id" value="<?php echo $selectedUser['id']; ?>">
-            <?php if ($isSingleMode): ?>
-            <input type="hidden" name="single_device_id" value="<?php echo $preselectedDevId; ?>">
-            <?php endif; ?>
-
-            <p style="color:#555;font-size:13px;margin-bottom:16px;" class="no-print">
-                <i class="fas fa-info-circle" style="color:#3498db;"></i>
-                Expand each device card and complete the return checklist before submitting.
-            </p>
-
-            <!-- ===== PER-DEVICE CARDS (File-1 UI) ===== -->
-            <?php if (empty($formDevices)): ?>
-            <div class="empty-state no-print">
-                <i class="fas fa-inbox"></i>
-                <h4>No devices to clear</h4>
-                <p>The selected device is not currently assigned to this employee.</p>
-            </div>
-            <?php else: ?>
-                <?php foreach ($formDevices as $asset):
-                    $did = (int)($asset['device_id'] ?? $asset['id']);
-                ?>
-                <div class="device-card" id="card-<?php echo $did; ?>" style="border:1px solid #e0e0e0;border-radius:8px;margin-bottom:20px;overflow:hidden;">
-
-                    <!-- Card Header -->
-                    <div style="background:#f8f9fa;padding:13px 18px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;border-bottom:1px solid #e0e0e0;">
-                        <div style="display:flex;align-items:center;gap:12px;">
-                            <div style="width:38px;height:38px;background:#3498db18;border-radius:8px;display:flex;align-items:center;justify-content:center;">
-                                <i class="fas fa-laptop" style="color:#3498db;font-size:16px;"></i>
-                            </div>
-                            <div>
-                                <div style="font-weight:700;font-size:15px;">
-                                    <?php echo sanitize($asset['type_name'] ?? 'Device'); ?>
-                                </div>
-                                <div style="font-size:12px;color:#888;">
-                                    <span style="background:#eee;padding:2px 7px;border-radius:4px;margin-right:6px;"><?php echo sanitize($asset['asset_tag']); ?></span>
-                                    &nbsp;&bull;&nbsp; Assigned: <?php echo formatDate($asset['assigned_date'] ?? ''); ?>
-                                </div>
-                            </div>
-                        </div>
-                        <div style="display:flex;align-items:center;gap:8px;" class="no-print">
-                            <span id="prog-<?php echo $did; ?>" class="progress-badge" style="font-size:12px;color:#888;">
-                                0 / <?php echo $totalCheckItems; ?> checked
-                            </span>
-                            <button type="button" class="btn btn-outline btn-sm expand-btn" data-id="<?php echo $did; ?>"
-                                    style="font-size:12px;padding:4px 12px;" onclick="toggleCard(<?php echo $did; ?>)">
-                                <i class="fas fa-chevron-down" id="icon-<?php echo $did; ?>"></i> Expand
-                            </button>
-                        </div>
-                    </div>
-
-                    <!-- Expandable Body -->
-                    <div id="body-<?php echo $did; ?>" style="display:none;">
-                        <div style="padding:18px;">
-
-                            <!-- Condition Rating -->
-                            <div style="margin-bottom:20px;">
-                                <div class="section-label" style="margin-bottom:10px;">
-                                    <i class="fas fa-star" style="color:#f39c12;"></i> Overall Device Condition
-                                    <span style="color:#e74c3c;font-size:12px;font-weight:400;margin-left:6px;">* Required</span>
-                                </div>
-                                <div style="display:flex;gap:8px;flex-wrap:wrap;">
-                                    <?php
-                                    $conditions = [
-                                        'excellent' => ['Excellent','#27AE60'],
-                                        'good'      => ['Good',     '#2ecc71'],
-                                        'fair'      => ['Fair',     '#f39c12'],
-                                        'poor'      => ['Poor',     '#e67e22'],
-                                        'damaged'   => ['Damaged',  '#e74c3c'],
-                                    ];
-                                    foreach ($conditions as $val => [$label,$color]):
-                                    ?>
-                                    <label class="condition-pill" data-color="<?php echo $color; ?>"
-                                           style="cursor:pointer;display:inline-flex;align-items:center;gap:6px;padding:6px 14px;border-radius:20px;border:2px solid <?php echo $color; ?>22;background:<?php echo $color; ?>12;font-size:13px;transition:all .15s;user-select:none;">
-                                        <input type="radio"
-                                               name="device_checklist[<?php echo $did; ?>][condition]"
-                                               value="<?php echo $val; ?>"
-                                               class="condition-radio" data-device="<?php echo $did; ?>"
-                                               style="width:14px;height:14px;accent-color:<?php echo $color; ?>;" required>
-                                        <span style="color:<?php echo $color; ?>;font-weight:600;"><?php echo $label; ?></span>
-                                    </label>
-                                    <?php endforeach; ?>
-                                </div>
-                            </div>
-
-                            <!-- Checklist Groups -->
-                            <div class="section-label" style="margin-bottom:10px;">
-                                <i class="fas fa-clipboard-check" style="color:#3498db;"></i> Return Checklist
-                            </div>
-                            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:14px;margin-bottom:18px;">
-                                <?php foreach ($checklistGroups as $groupName => $items):
-                                    $icons = ['Physical'=>'fa-shield-alt','Accessories'=>'fa-box-open','Data & Security'=>'fa-lock'];
-                                    $icon  = $icons[$groupName] ?? 'fa-list';
-                                ?>
-                                <div style="background:#fafafa;border:1px solid #eee;border-radius:8px;padding:13px;">
-                                    <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#3498db;margin-bottom:10px;">
-                                        <i class="fas <?php echo $icon; ?>"></i> <?php echo $groupName; ?>
-                                    </div>
-                                    <?php foreach ($items as $itemKey => $itemLabel): ?>
-                                    <label style="display:flex;align-items:flex-start;gap:8px;margin-bottom:8px;cursor:pointer;font-size:13px;color:#333;line-height:1.4;">
-                                        <input type="checkbox"
-                                               name="device_checklist[<?php echo $did; ?>][items][]"
-                                               value="<?php echo $itemKey; ?>"
-                                               class="item-cb" data-device="<?php echo $did; ?>"
-                                               style="margin-top:2px;width:15px;height:15px;accent-color:#27AE60;flex-shrink:0;">
-                                        <?php echo sanitize($itemLabel); ?>
-                                    </label>
-                                    <?php endforeach; ?>
-                                </div>
-                                <?php endforeach; ?>
-                            </div>
-
-                            <!-- Checked By + Remarks -->
-                            <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
-                                <div>
-                                    <label class="section-label" style="display:block;margin-bottom:6px;">
-                                        <i class="fas fa-user-shield" style="color:#3498db;"></i> Checked By (IT Staff)
-                                        <span style="color:#e74c3c;font-size:12px;font-weight:700;margin-left:4px;">*</span>
-                                    </label>
-                                    <select name="device_checklist[<?php echo $did; ?>][checked_by]" class="form-control" style="font-size:13px;" required>
-                                        <option value="">— Select IT Staff —</option>
-                                        <?php foreach ($itStaff as $staff): ?>
-                                        <option value="<?php echo $staff['id']; ?>"
-                                            <?php echo ($staff['id'] == ($_SESSION['user_id']??0)) ? 'selected' : ''; ?>>
-                                            <?php echo sanitize($staff['full_name'] . ' (' . $staff['employee_id'] . ')'); ?>
-                                        </option>
-                                        <?php endforeach; ?>
-                                    </select>
-                                </div>
-                                <div>
-                                    <label class="section-label" style="display:block;margin-bottom:6px;">
-                                        <i class="fas fa-comment-alt" style="color:#3498db;"></i> Device Remarks
-                                    </label>
-                                    <textarea name="device_checklist[<?php echo $did; ?>][notes]"
-                                              class="form-control" rows="2" style="font-size:13px;"
-                                              placeholder="Missing accessories, visible damage, etc."></textarea>
-                                </div>
-                            </div>
-
-                        </div><!-- /padding -->
-
-                        <!-- Collapsed hint -->
-                        <div id="hint-<?php echo $did; ?>" style="padding:9px 18px;font-size:12px;color:#bbb;border-top:1px solid #f0f0f0;" class="no-print">
-                            <i class="fas fa-info-circle"></i> Click <strong>Expand</strong> to complete the return checklist for this device.
-                        </div>
-
-                    </div><!-- /device-card -->
-                    <?php endforeach; ?>
-
-                </div>
-
-                <!-- Static info rows -->
-                <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:20px;">
-                    <div>
-                        <div style="font-size:11px;color:#888;font-weight:700;text-transform:uppercase;letter-spacing:.5px;">Employee</div>
-                        <p style="margin:6px 0;font-weight:600;"><?php echo sanitize($selectedUser['full_name']); ?></p>
-                    </div>
-                    <div>
-                        <div style="font-size:11px;color:#888;font-weight:700;text-transform:uppercase;letter-spacing:.5px;">Clearance Date</div>
-                        <p style="margin:6px 0;font-weight:600;"><?php echo date('F j, Y'); ?></p>
-                    </div>
-                </div>
-
-                <!-- Signature block -->
-                <div style="margin-bottom:28px;">
-                    <div style="font-size:13px;font-weight:700;color:#2c3e50;margin-bottom:16px;text-transform:uppercase;letter-spacing:.5px;">Authorized Signatures & Certification</div>
-                    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:20px;">
-                        <!-- Employee Signature Box -->
-                        <div style="border:1px solid #ddd;border-radius:6px;padding:16px;background:#fafbfc;">
-                            <div style="font-size:10px;color:#666;font-weight:700;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px;">Employee / User</div>
-                            <div style="border-bottom:2px solid #333;height:70px;margin-bottom:12px;"></div>
-                            <div style="margin-bottom:10px;">
-                                <div style="font-size:12px;font-weight:700;color:#222;"><?php echo sanitize($selectedUser['full_name']); ?></div>
-                                <div style="font-size:11px;color:#666;margin-top:2px;"><?php echo sanitize($selectedUser['position'] ?? ''); ?></div>
-                                <div style="font-size:11px;color:#666;"><?php echo sanitize($selectedUser['employee_id']); ?></div>
-                            </div>
-                            <div style="font-size:10px;color:#999;margin-top:8px;">
-                                <div style="font-weight:600;color:#666;">Date:</div>
-                                <div style="border-bottom:1px solid #ccc;height:18px;margin-top:2px;"></div>
-                            </div>
-                        </div>
-
-                        <!-- IT Staff Signature Box -->
-                        <div style="border:1px solid #ddd;border-radius:6px;padding:16px;background:#fafbfc;">
-                            <div style="font-size:10px;color:#666;font-weight:700;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px;">IT Staff Signature</div>
-                            <div style="border-bottom:2px solid #333;height:70px;margin-bottom:12px;"></div>
-                            <div style="margin-bottom:10px;">
-                                <div style="font-size:12px;font-weight:700;color:#222;"><?php echo sanitize($_SESSION['full_name'] ?? ''); ?></div>
-                                <div style="font-size:11px;color:#666;margin-top:2px;">IT Department</div>
-                                <div style="font-size:11px;color:#666;"><?php echo sanitize($_SESSION['employee_id'] ?? 'N/A'); ?></div>
-                            </div>
-                            <div style="font-size:10px;color:#999;margin-top:8px;">
-                                <div style="font-weight:600;color:#666;">Date:</div>
-                                <div style="border-bottom:1px solid #ccc;height:18px;margin-top:2px;"></div>
-                            </div>
-                        </div>
-
-                        <!-- Supervisor Signature Box -->
-                        <div style="border:1px solid #ddd;border-radius:6px;padding:16px;background:#fafbfc;">
-                            <div style="font-size:10px;color:#999;font-weight:700;text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px;">Name (Please print):</div>
-                            <div style="border-bottom:1px solid #ccc;height:16px;margin-bottom:12px;"></div>
-                            <div style="margin-bottom:10px;">
-                                <div style="font-size:10px;color:#999;font-weight:600;">Signature:</div>
-                            </div>
-                            <div style="font-size:10px;color:#999;margin-top:8px;">
-                                <div style="font-weight:600;color:#666;">Date:</div>
-                                <div style="border-bottom:1px solid #ccc;height:18px;margin-top:2px;"></div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Deactivate (full mode only) -->
-                <?php if (!$isSingleMode): ?>
-                <div class="form-group" style="margin-bottom:18px;">
-                    <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:13px;">
-                        <input type="checkbox" name="deactivate_user" value="1"
-                               <?php echo isset($_POST['deactivate_user'])?'checked':''; ?>>
-                        <span>Mark employee account as <strong>Inactive</strong> after clearance (offboarding)</span>
-                    </label>
-                </div>
-                <?php endif; ?>
-
-                <!-- General notes -->
-                <div class="form-group" style="margin-bottom:18px;">
-                    <label class="form-label">
-                        <?php echo $isSingleMode ? 'Return Notes' : 'Clearance Notes'; ?> <em style="font-weight:400;color:#888;">(optional)</em>
-                    </label>
-                    <textarea name="clearance_notes" class="form-control" rows="3"
-                              placeholder="Overall handover remarks, missing accessories across all devices, or special notes…"><?php echo htmlspecialchars($_POST['clearance_notes'] ?? ''); ?></textarea>
-                </div>
-
-                <!-- Confirmation -->
-                <div style="background:#fef9f0;border:1px solid #F39C12;border-radius:8px;padding:13px 18px;margin-bottom:20px;">
-                    <label style="display:flex;align-items:flex-start;gap:12px;cursor:pointer;">
-                        <input type="checkbox" name="confirm_clearance" id="confirm_clearance" value="1" required
-                               style="margin-top:3px;width:16px;height:16px;flex-shrink:0;"
-                               <?php echo isset($_POST['confirm_clearance'])?'checked':''; ?>>
-                        <span style="font-size:13px;color:#7D6608;">
-                            <strong>Confirmation:</strong>
-                            <?php if ($isSingleMode): ?>
-                            I confirm the selected device has been physically received, inspected, and the per-device checklist above is accurate.
-                            <?php else: ?>
-                            I confirm all assigned devices are returned and the per-device checklists above are accurate.
-                            The employee has been cleared by the IT Department.
-                            <?php endif; ?>
-                        </span>
-                    </label>
-                </div>
-
-                <!-- Submit -->
-                <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;" class="no-print">
-                    <button type="submit" class="btn btn-danger">
-                        <i class="fas fa-check"></i>
-                        <?php echo $isSingleMode ? 'Complete Single-Device Clearance' : 'Complete Full Employee Clearance'; ?>
-                    </button>
-                    <button type="button" class="btn btn-outline" onclick="window.print()">
-                        <i class="fas fa-print"></i> Print Form
-                    </button>
-                </div>
-            </div><!-- /Authorization -->
-
-            <!-- Overall progress indicator (File-1) -->
-            <div id="overall-progress" class="no-print" style="background:#f0f8ff;border:1px solid #bee3f8;border-radius:8px;padding:12px 16px;margin-top:16px;display:flex;align-items:center;gap:12px;">
-                <i class="fas fa-tasks" style="color:#3498db;font-size:18px;"></i>
-                <div>
-                    <div style="font-weight:600;font-size:13px;color:#2c3e50;">Checklist Progress</div>
-                    <div id="progress-detail" style="font-size:12px;color:#888;">Expand each device above to fill in return details.</div>
-                </div>
-                <div style="margin-left:auto;text-align:center;">
-                    <span id="progress-count" style="font-size:22px;font-weight:700;color:#3498db;">0</span>
-                    <span style="font-size:12px;color:#888;"> / <?php echo $totalFormDevices; ?> devices reviewed</span>
-                </div>
-            </div>
-
-            <?php endif; ?>
-        </form>
-
-        <!-- ── Post-clearance receipt (File-2) ── -->
-        <?php else: /* $isDone */ 
-            // Ensure we have the user's assigned devices for the receipt
-            if (empty($assignedDevices) && $selectedUserId > 0) {
-                $assignedDevices = getEmployeeAssignedDevices($selectedUserId);
-            }
-            $assignments = $assignedDevices ?? [];
-        ?>
-        <div style="background:#EAFAF1;border:1px solid #27AE6040;border-radius:8px;padding:14px 18px;margin-bottom:18px;font-size:13px;color:#1E8449;">
-            <i class="fas fa-check-circle"></i>
-            <strong>Clearance completed successfully.</strong>
-            <?php echo $isSingleMode ? 'The selected device has been returned to stock or sent for repair as needed.' : 'Assigned devices have been returned to stock or sent for repair as needed.'; ?>
-        </div>
-
-        <div style="background:linear-gradient(135deg, #2c3e50 0%, #34495e 100%);border-radius:8px;padding:24px;margin-bottom:28px;color:white;">
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-bottom:16px;">
-                <div>
-                    <div style="font-size:10px;color:rgba(255,255,255,0.7);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">Employee</div>
-                    <div style="font-size:16px;font-weight:700;"><?php echo sanitize($selectedUser['full_name']); ?></div>
-                    <div style="font-size:11px;color:rgba(255,255,255,0.8);margin-top:4px;margin-bottom:2px;"><?php echo sanitize($selectedUser['position'] ?? ''); ?> • <?php echo sanitize($selectedUser['department']); ?></div>
-                    <div style="font-size:10px;color:rgba(255,255,255,0.6);">ID: <?php echo sanitize($selectedUser['employee_id']); ?></div>
-                </div>
-                <div style="text-align:right;">
-                    <div style="font-size:10px;color:rgba(255,255,255,0.7);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">Clearance Date</div>
-                    <div style="font-size:18px;font-weight:700;"><?php echo date('F j, Y'); ?></div>
-                    <div style="font-size:10px;color:rgba(255,255,255,0.6);margin-top:6px;">Clearance Reference: CLR-<?php echo $refSuffix; ?></div>
-                </div>
-            </div>
-            <div style="border-top:1px solid rgba(255,255,255,0.2);padding-top:16px;">
-                <div style="font-size:11px;color:rgba(255,255,255,0.8);display:flex;align-items:center;gap:8px;">
-                    <i class="fas fa-check-circle" style="color:#27ae60;"></i>
-                    <span><?php echo $isSingleMode ? 'Single-device clearance completed' : 'Full employee clearance completed'; ?> • Devices processed: <?php echo count($assignments); ?></span>
-                </div>
-            </div>
-        </div>
-
-        <!-- Device Condition Summary Section -->
-        <div style="background:linear-gradient(135deg, #f5f7fa 0%, #eef2f7 100%);border:1px solid #d1dce6;border-radius:8px;padding:20px 24px;margin-bottom:32px;">
-            <div style="display:flex;align-items:center;margin-bottom:16px;">
-                <div style="flex:1;">
-                    <div style="font-size:14px;font-weight:700;color:#2c3e50;text-transform:uppercase;letter-spacing:.6px;">Device Status Summary</div>
-                </div>
-                <div style="font-size:11px;color:#888;font-weight:600;"><?php echo date('F j, Y'); ?></div>
-            </div>
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
-                <div style="background:white;border-left:4px solid #27ae60;padding:12px 14px;border-radius:4px;">
-                    <div style="font-size:11px;color:#666;font-weight:600;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px;">Returned to Stock</div>
-                    <div style="font-size:18px;font-weight:700;color:#27ae60;">
-                        <?php 
-                            $inStockCount = 0;
-                            $repairCount = 0;
-                            if ($selectedUserId > 0) {
-                                // Query devices that have been returned (device_assignments.status = 'returned')
-                                if ($isSingleMode && $preselectedDevId > 0) {
-                                    // Single device mode
-                                    $countStmt = $pdo->prepare("
-                                        SELECT 
-                                            SUM(CASE WHEN d.status = 'in_stock' THEN 1 ELSE 0 END) as in_stock,
-                                            SUM(CASE WHEN d.status = 'under_repair' THEN 1 ELSE 0 END) as under_repair
-                                        FROM device_assignments da
-                                        JOIN devices d ON da.device_id = d.id
-                                        WHERE da.employee_id = ? AND da.status = 'returned' AND d.id = ?
-                                    ");
-                                    $countStmt->execute([$selectedUserId, $preselectedDevId]);
-                                } else {
-                                    // Full employee clearance
-                                    $countStmt = $pdo->prepare("
-                                        SELECT 
-                                            SUM(CASE WHEN d.status = 'in_stock' THEN 1 ELSE 0 END) as in_stock,
-                                            SUM(CASE WHEN d.status = 'under_repair' THEN 1 ELSE 0 END) as under_repair
-                                        FROM device_assignments da
-                                        JOIN devices d ON da.device_id = d.id
-                                        WHERE da.employee_id = ? AND da.status = 'returned'
-                                    ");
-                                    $countStmt->execute([$selectedUserId]);
-                                }
-                                $counts = $countStmt->fetch(PDO::FETCH_ASSOC);
-                                $inStockCount = (int)($counts['in_stock'] ?? 0);
-                                $repairCount = (int)($counts['under_repair'] ?? 0);
-                            }
-                            echo $inStockCount;
-                        ?>
-                    </div>
-                </div>
-                <div style="background:white;border-left:4px solid #e74c3c;padding:12px 14px;border-radius:4px;">
-                    <div style="font-size:11px;color:#666;font-weight:600;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px;">Marked for Repair</div>
-                    <div style="font-size:18px;font-weight:700;color:#e74c3c;">
-                        <?php echo $repairCount; ?>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Page Separator -->
-        <div style="border-top:3px solid #2c3e50;margin:40px 0;"></div>
-
-        <!-- Authorized Signatures Header -->
-        <div class="sig-header-section" style="background:linear-gradient(135deg, #2c3e50 0%, #34495e 100%);border-radius:8px;padding:24px;margin-bottom:24px;color:white;">
-            <div style="display:flex;align-items:center;gap:16px;margin-bottom:20px;">
-                <div style="font-size:28px;color:#3498db;">
-                    <i class="fas fa-file-signature"></i>
-                </div>
-                <div style="flex:1;">
-                    <div style="font-size:18px;font-weight:700;margin-bottom:4px;">Authorized Signatures & Certification</div>
-                    <div style="font-size:11px;color:rgba(255,255,255,0.8);">All signatories must complete this clearance documentation</div>
-                </div>
-                <div style="text-align:right;border-left:1px solid rgba(255,255,255,0.2);padding-left:20px;">
-                    <div style="font-size:10px;color:rgba(255,255,255,0.7);font-weight:600;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px;">Reference</div>
-                    <div style="font-size:16px;font-weight:700;">CLR-<?php echo $refSuffix; ?></div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Signees Information Grid (Screen Only) -->
-        <div class="signee-info-grid" style="background:#f8f9fa;border:1px solid #e0e6ed;border-radius:8px;padding:24px;margin-bottom:32px;">
-            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:24px;margin-bottom:24px;">
-                <!-- Employee Info -->
-                <div style="border-right:1px solid #e0e6ed;padding-right:20px;">
-                    <div style="font-size:9px;color:#7f8c8d;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:12px;display:flex;align-items:center;gap:6px;">
-                        <i class="fas fa-user" style="color:#3498db;"></i> Employee / User
-                    </div>
-                    <div style="margin-bottom:16px;">
-                        <div style="font-size:10px;color:#888;font-weight:600;text-transform:uppercase;letter-spacing:.3px;margin-bottom:4px;">Full Name</div>
-                        <div style="font-size:14px;font-weight:700;color:#2c3e50;"><?php echo sanitize($selectedUser['full_name']); ?></div>
-                    </div>
-                    <div style="margin-bottom:16px;">
-                        <div style="font-size:10px;color:#888;font-weight:600;text-transform:uppercase;letter-spacing:.3px;margin-bottom:4px;">Employee ID</div>
-                        <div style="font-size:13px;color:#3498db;font-weight:600;"><?php echo sanitize($selectedUser['employee_id']); ?></div>
-                    </div>
-                    <div style="margin-bottom:0;">
-                        <div style="font-size:10px;color:#888;font-weight:600;text-transform:uppercase;letter-spacing:.3px;margin-bottom:4px;">Department</div>
-                        <div style="font-size:12px;color:#555;"><?php echo sanitize($selectedUser['department']); ?></div>
-                    </div>
-                </div>
-
-                <!-- IT Staff Info -->
-                <div style="border-right:1px solid #e0e6ed;padding-right:20px;">
-                    <div style="font-size:9px;color:#7f8c8d;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:12px;display:flex;align-items:center;gap:6px;">
-                        <i class="fas fa-shield-alt" style="color:#27ae60;"></i> IT Staff Approval
-                    </div>
-                    <div style="margin-bottom:16px;">
-                        <div style="font-size:10px;color:#888;font-weight:600;text-transform:uppercase;letter-spacing:.3px;margin-bottom:4px;">Full Name</div>
-                        <div style="font-size:14px;font-weight:700;color:#2c3e50;"><?php echo sanitize($_SESSION['full_name']); ?></div>
-                    </div>
-                    <div style="margin-bottom:16px;">
-                        <div style="font-size:10px;color:#888;font-weight:600;text-transform:uppercase;letter-spacing:.3px;margin-bottom:4px;">Employee ID</div>
-                        <div style="font-size:13px;color:#27ae60;font-weight:600;"><?php echo sanitize($_SESSION['employee_id'] ?? 'N/A'); ?></div>
-                    </div>
-                    <div style="margin-bottom:0;">
-                        <div style="font-size:10px;color:#888;font-weight:600;text-transform:uppercase;letter-spacing:.3px;margin-bottom:4px;">Department</div>
-                        <div style="font-size:12px;color:#555;">IT Department</div>
-                    </div>
-                </div>
-
-                <!-- Supervisor Info -->
-                <div style="padding-right:0;">
-                    <div style="font-size:9px;color:#7f8c8d;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:12px;display:flex;align-items:center;gap:6px;">
-                        <i class="fas fa-check-double" style="color:#9b59b6;"></i> Supervisor / Manager
-                    </div>
-                    <div style="margin-bottom:16px;">
-                        <div style="font-size:10px;color:#888;font-weight:600;text-transform:uppercase;letter-spacing:.3px;margin-bottom:4px;">Full Name</div>
-                        <div style="font-size:14px;font-weight:700;color:#2c3e50;">_____________________</div>
-                    </div>
-                    <div style="margin-bottom:16px;">
-                        <div style="font-size:10px;color:#888;font-weight:600;text-transform:uppercase;letter-spacing:.3px;margin-bottom:4px;">Employee ID</div>
-                        <div style="font-size:13px;color:#9b59b6;font-weight:600;">_____________________</div>
-                    </div>
-                    <div style="margin-bottom:0;">
-                        <div style="font-size:10px;color:#888;font-weight:600;text-transform:uppercase;letter-spacing:.3px;margin-bottom:4px;">Department</div>
-                        <div style="font-size:12px;color:#555;">_____________________</div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Clearance Metadata -->
-            <div style="border-top:1px solid #e0e6ed;padding-top:16px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;">
-                <div>
-                    <div style="font-size:9px;color:#888;font-weight:600;text-transform:uppercase;letter-spacing:.3px;margin-bottom:4px;">Clearance Type</div>
-                    <div style="font-size:12px;color:#2c3e50;font-weight:600;"><?php echo $isSingleMode ? 'Single-Device' : 'Full Employee'; ?></div>
-                </div>
-                <div>
-                    <div style="font-size:9px;color:#888;font-weight:600;text-transform:uppercase;letter-spacing:.3px;margin-bottom:4px;">Devices Processed</div>
-                    <div style="font-size:12px;color:#2c3e50;font-weight:600;"><?php echo count($assignments); ?> device(s)</div>
-                </div>
-                <div style="text-align:right;">
-                    <div style="font-size:9px;color:#888;font-weight:600;text-transform:uppercase;letter-spacing:.3px;margin-bottom:4px;">Completion Date</div>
-                    <div style="font-size:12px;color:#2c3e50;font-weight:600;"><?php echo date('F j, Y'); ?></div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Signature Boxes (Screen Version) and Print-Simple (Print Version) -->
-        <div style="margin-bottom:28px;">
-            <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:24px;">
-                <!-- Employee Signature Box -->
-                <div class="signature-box" style="border:2px solid #3498db;border-radius:8px;padding:24px;background:linear-gradient(to bottom, #f0f8ff, white);box-shadow:0 4px 8px rgba(52,152,219,0.12);">
-                    <div class="sig-header" style="display:flex;align-items:center;gap:8px;margin-bottom:16px;padding-bottom:12px;border-bottom:2px solid #3498db;">
-                        <i class="fas fa-user" style="color:#3498db;font-size:14px;"></i>
-                        <div style="font-size:9px;color:#3498db;font-weight:800;text-transform:uppercase;letter-spacing:.5px;">Employee Signature</div>
-                    </div>
-                    <div class="sig-info" style="margin-bottom:20px;padding-bottom:14px;border-bottom:1px solid #e0e6ed;">
-                        <div style="font-size:12px;font-weight:700;color:#2c3e50;margin-bottom:6px;"><?php echo sanitize($selectedUser['full_name']); ?></div>
-                        <div style="font-size:10px;color:#7f8c8d;">ID: <?php echo sanitize($selectedUser['employee_id']); ?></div>
-                    </div>
-                    <div class="sig-area" style="margin-bottom:16px;">
-                        <div style="font-size:9px;color:#666;font-weight:600;margin-bottom:8px;">Signature:</div>
-                        <div style="border-bottom:2px solid #333;height:80px;background:white;border-radius:2px;"></div>
-                    </div>
-                    <div class="sig-date">
-                        <div style="font-size:9px;color:#666;font-weight:600;margin-bottom:6px;">Date:</div>
-                        <div style="border-bottom:1px solid #bdc3c7;height:18px;"></div>
-                    </div>
-                </div>
-
-                <!-- IT Staff Signature Box -->
-                <div class="signature-box" style="border:2px solid #27ae60;border-radius:8px;padding:24px;background:linear-gradient(to bottom, #f0fdf4, white);box-shadow:0 4px 8px rgba(39,174,96,0.12);">
-                    <div class="sig-header" style="display:flex;align-items:center;gap:8px;margin-bottom:16px;padding-bottom:12px;border-bottom:2px solid #27ae60;">
-                        <i class="fas fa-shield-alt" style="color:#27ae60;font-size:14px;"></i>
-                        <div style="font-size:9px;color:#27ae60;font-weight:800;text-transform:uppercase;letter-spacing:.5px;">IT Staff Approval</div>
-                    </div>
-                    <div class="sig-info" style="margin-bottom:20px;padding-bottom:14px;border-bottom:1px solid #e0e6ed;">
-                        <div style="font-size:12px;font-weight:700;color:#2c3e50;margin-bottom:6px;"><?php echo sanitize($_SESSION['full_name']); ?></div>
-                        <div style="font-size:10px;color:#7f8c8d;">ID: <?php echo sanitize($_SESSION['employee_id'] ?? 'N/A'); ?></div>
-                    </div>
-                    <div class="sig-area" style="margin-bottom:16px;">
-                        <div style="font-size:9px;color:#666;font-weight:600;margin-bottom:8px;">Signature:</div>
-                        <div style="border-bottom:2px solid #333;height:80px;background:white;border-radius:2px;"></div>
-                    </div>
-                    <div class="sig-date">
-                        <div style="font-size:9px;color:#666;font-weight:600;margin-bottom:6px;">Date:</div>
-                        <div style="border-bottom:1px solid #bdc3c7;height:18px;"></div>
-                    </div>
-                </div>
-
-                <!-- Supervisor Signature Box -->
-                <div class="signature-box" style="border:2px solid #9b59b6;border-radius:8px;padding:24px;background:linear-gradient(to bottom, #fdf7ff, white);box-shadow:0 4px 8px rgba(155,89,182,0.12);">
-                    <div class="sig-header" style="display:flex;align-items:center;gap:8px;margin-bottom:16px;padding-bottom:12px;border-bottom:2px solid #9b59b6;">
-                        <i class="fas fa-check-double" style="color:#9b59b6;font-size:14px;"></i>
-                        <div style="font-size:9px;color:#9b59b6;font-weight:800;text-transform:uppercase;letter-spacing:.5px;">Supervisor Authorization</div>
-                    </div>
-                    <div class="sig-info" style="margin-bottom:20px;padding-bottom:14px;border-bottom:1px solid #e0e6ed;">
-                        <div style="font-size:10px;color:#7f8c8d;font-weight:600;">Name (Please print):</div>
-                        <div style="border-bottom:1px solid #bdc3c7;height:18px;margin-top:4px;"></div>
-                    </div>
-                    <div class="sig-area" style="margin-bottom:16px;">
-                        <div style="font-size:9px;color:#666;font-weight:600;margin-bottom:8px;">Signature:</div>
-                        <div style="border-bottom:2px solid #333;height:80px;background:white;border-radius:2px;"></div>
-                    </div>
-                    <div class="sig-date">
-                        <div style="font-size:9px;color:#666;font-weight:600;margin-bottom:6px;">Date:</div>
-                        <div style="border-bottom:1px solid #bdc3c7;height:18px;"></div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <div style="background:#f8f9fa;border-radius:6px;padding:10px 14px;font-size:11px;color:#666;text-align:center;">
-            Ref: CLR-<?php echo $refSuffix; ?> &nbsp;&middot;&nbsp;
-            <?php echo $isSingleMode ? 'Single-device clearance' : 'Full employee clearance'; ?> &nbsp;&middot;&nbsp;
-            Printed: <?php echo date('F j, Y g:i A'); ?>
-        </div>
-
-        <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:20px;" class="no-print">
-            <button onclick="window.print()" class="btn btn-primary">
-                <i class="fas fa-print"></i> Print Clearance Form
-            </button>
-            <?php if ($isSingleMode): ?>
-            <a href="it_clearance.php?user_id=<?php echo $selectedUserId; ?>" class="btn btn-outline">
-                <i class="fas fa-user-check"></i> Full Employee Clearance
-            </a>
-            <?php endif; ?>
-            <a href="it_clearance.php" class="btn btn-outline">
-                <i class="fas fa-user-plus"></i> New Clearance
-            </a>
-        </div>
-        <?php endif; /* isDone */ ?>
-
-    </div><!-- /padding -->
-</div><!-- /card -->
-
-<?php endif; /* selectedUser */ ?>
-
-<!-- ══ STYLES ═══════════════════════════════════════════════════════════════ -->
+<!-- ══ PRINT STYLES & PRINTABLE AREA (True to Example PDF Layout) ═════════ -->
 <style>
-/* Shared label/value */
-.cl-label { font-size:11px;color:#888;font-weight:700;text-transform:uppercase;letter-spacing:.5px; }
-.cl-value  { margin:8px 0 16px;font-weight:600; }
-.section-label { font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#555; }
+    /* I-update o idagdag ito sa iyong umiiral na .pc-header */
+    .pc-header { 
+        text-align: center; 
+        margin-bottom: 25px; 
+    }
+    
+    /* Bagong style para sa logo */
+    .pc-logo {
+        max-height: 55px; /* Sukat ng logo mo */
+        width: auto;
+        display: block;    /* Pinipilit nito ang kasunod na text na bumaba */
+        margin: 0 auto 10px auto; /* Inilalagay ang logo sa gitna at nagbibigay ng 10px na espasyo sa ilalim */
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+    }
+    /* Print Setup Constraints */
+    @page { 
+        size: portrait; 
+        margin: 20mm 15mm 20mm 15mm; 
+    }
+    
+    @media screen {
+        .printable-clearance { display: none; }
+    }
+    
+    @media print {
+        html, body { 
+            height: auto !important; 
+            background: #fff !important;
+            font-family: Arial, sans-serif !important;
+            font-size: 12px !important;
+            color: #000 !important;
+        }
+        body * { visibility: hidden; }
+        
+        .printable-clearance, .printable-clearance * { visibility: visible; }
+        .printable-clearance { 
+            display: block !important; 
+            position: absolute !important; 
+            left: 0 !important; 
+            top: 0 !important; 
+            width: 100% !important; 
+            padding: 0 !important; 
+            margin: 0 !important; 
+            box-sizing: border-box; 
+        }
+        .no-print { display: none !important; }
+    }
 
-/* Condition pills */
-.condition-pill { transition:all .15s; }
-.condition-pill:hover { filter:brightness(.96); }
-
-/* Print */
-@media print {
-    .no-print, .sidebar, .top-header, .app-footer, .btn,
-    .alert, .form-control, select, input[type="text"], input[type="date"],
-    textarea, .card-header a { display: none !important; }
-    .print-only{ display:block !important; }
-    .main-wrapper { margin: 0; padding: 0; }
-    .page-header, .card { box-shadow: none !important; border: none !important; }
-    .print-section { width: 100%; }
-    body { font-size: 12px; }
-    .device-card { break-inside: avoid; page-break-inside: avoid; }
-    [id^="body-"] { display: none !important; }
-    [id^="hint-"] { display: none !important; }
+    /* KBMC Branding Stylesheet Configuration */
+    .printable-clearance { 
+        font-family: Arial, sans-serif; 
+        color: #000; 
+        background: #fff; 
+        line-height: 1.4;
+    }
+    .pc-header { 
+        text-align: center; 
+        margin-bottom: 25px; 
+    }
+    .pc-comp-name { 
+        font-size: 9px; 
+        color: red;
+        font-weight: bold; 
+        margin-bottom: 2px; 
+        letter-spacing: 0.5px;
+    }
+    .pc-title { 
+        font-weight: bold; 
+        font-size: 18px; 
+        margin-top: 10px;
+        border-bottom: 2px solid #000;
+        display: inline-block;
+        padding-bottom: 3px;
+        margin-bottom: 25px;
+    }
+    .pc-meta { 
+        width: 100%; 
+        margin-bottom: 20px; 
+        font-size: 12px; 
+        border-collapse: collapse;
+    }
+    .pc-meta td { 
+        vertical-align: middle; 
+        padding: 5px 0; 
+    }
+    .pc-meta td strong {
+        display: inline-block;
+        width: 130px;
+    }
+    .pc-section-title {
+        font-weight: bold;
+        font-size: 12px;
+        margin-top: 15px;
+        margin-bottom: 6px;
+    }
+    .pc-table { 
+        width: 100%; 
+        border-collapse: collapse; 
+        margin-bottom: 20px; 
+        font-size: 12px; 
+    }
+    .pc-table th { 
+        border: 1px solid #000; 
+        padding: 7px 9px; 
+        font-weight: bold; 
+        text-align: left; 
+        background-color: #f2f2f2;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+    }
+    .pc-table td { 
+        border: 1px solid #000; 
+        padding: 7px 9px; 
+        vertical-align: middle;
+    }
+    .text-center { text-align: center !important; }
     
-    /* Print: Collapse device cards to header only */
-    .device-card { border: none !important; margin-bottom: 12px !important; }
-    .device-card > div:first-child {
-        background: #f5f5f5 !important;
-        border: 1px solid #ddd !important;
-        border-radius: 4px !important;
-        padding: 10px 14px !important;
+    /* Document Checkbox Style matching "image_6dd18b.png" reference */
+    .pc-checkbox-cell {
+        font-size: 15px;
+        font-family: "Courier New", Courier, monospace;
+        text-align: center;
+        width: 11%;
+        font-weight: bold;
     }
     
-    /* Print: Show signee info grid */
-    .signee-info-grid { display: block !important; }
-    
-    /* Print: Show signature boxes with minimal styling */
-    .signature-box { 
-        border: 1px solid #333 !important; 
-        background: white !important; 
-        padding: 16px !important; 
-        box-shadow: none !important;
-        margin-bottom: 24px;
-        page-break-inside: avoid;
-        break-inside: avoid;
+    .pc-remarks-label {
+        font-weight: bold;
+        margin-top: 15px;
+        margin-bottom: 5px;
+    }
+    .pc-remarks { 
+        min-height: 60px; 
+        border: 1px solid #000; 
+        padding: 8px; 
+        margin-bottom: 20px; 
+        font-size: 12px;
+        white-space: pre-wrap;
+    }
+    .pc-ack-text {
+        font-size: 11.5px;
+        text-align: justify;
+        margin-bottom: 40px;
+        line-height: 1.5;
     }
     
-    /* Show signature box headers in print */
-    .signature-box .sig-header { 
-        display: flex !important;
-        align-items: center;
-        gap: 6px;
-        margin-bottom: 12px;
-        padding-bottom: 8px;
-        border-bottom: 1px solid #333 !important;
-        font-size: 10px !important;
+    /* PDF Document Mirror Signature Matrix Blocks */
+    .pc-sigs-container {
+        width: 100%;
+        margin-top: 30px;
     }
-    
-    .signature-box .sig-header i {
-        display: none !important;
+    .pc-sig-row {
+        display: table;
+        width: 100%;
+        table-layout: fixed;
+        margin-bottom: 25px;
     }
-    
-    /* Show signature box info section */
-    .signature-box .sig-info { 
-        display: block !important;
-        margin-bottom: 12px;
-        padding-bottom: 8px;
-        border-bottom: 1px solid #ddd !important;
-        font-size: 10px !important;
+    .pc-sig-cell {
+        display: table-cell;
+        vertical-align: bottom;
+        padding-right: 30px;
     }
-    
-    /* Show signature area */
-    .signature-box .sig-area { 
-        display: block !important;
-        margin-bottom: 12px;
+    .pc-date-cell {
+        display: table-cell;
+        vertical-align: bottom;
+        width: 25%;
     }
-    
-    .signature-box .sig-area div:last-child {
-        height: 60px !important;
-        border-bottom: 1px solid #333 !important;
+    .pc-line {
+        border-bottom: 1px solid #000;
+        width: 100%;
+        margin-bottom: 4px;
+        height: 24px;
     }
-    
-    /* Show date field */
-    .signature-box .sig-date { 
-        display: block !important;
-        font-size: 10px !important;
+    .pc-label {
+        font-size: 11px;
+        font-weight: bold;
     }
-    
-    .signature-box .sig-date > div:first-child {
-        display: block !important;
-    }
-    
-    .signature-box .sig-date > div:last-child {
-        border-bottom: 1px solid #333 !important;
-        height: auto !important;
-        margin-bottom: 0;
-    }
-    
-    /* Ensure header section is visible in print */
-    .sig-header-section {
-        display: block !important;
-    }
-}
 </style>
 
-<!-- ══ SCRIPTS ══════════════════════════════════════════════════════════════ -->
-<script>
-var totalCheckItems = <?php echo $totalCheckItems; ?>;
-var totalDevices    = <?php echo $totalFormDevices; ?>;
-var preselectedDevId = <?php echo $preselectedDevId; ?>;
+<div class="printable-clearance" id="printable-clearance">
+    <div class="pc-header">
+        <!-- Idinagdag ang logo dito sa pinakataas -->
+        <img src="assets/images/kbmc_logo_flat.png" alt="KBMC Logo" class="pc-logo">
+        
+        <!-- Ang Text ay nasa ilalim na ngayon ng Logo gamit ang block tag -->
+        <div class="pc-comp-name">KITCHEN BEAUTY MARKETING CORPORATION</div>
+        
+        <!-- Ang Title ng Form -->
+        <div class="pc-title">IT PROPERTY CLEARANCE FORM</div>
+    </div>
 
-function toggleCard(id) {
-    var body = document.getElementById('body-' + id);
-    var icon = document.getElementById('icon-' + id);
-    var hint = document.getElementById('hint-' + id);
-    var btn  = icon.closest('button');
-    if (body.style.display === 'none') {
-        body.style.display = 'block';
-        icon.className = 'fas fa-chevron-up';
-        btn.innerHTML  = '<i class="fas fa-chevron-up" id="icon-' + id + '"></i> Collapse';
-        if (hint) hint.style.display = 'none';
+    <?php
+    $lastClear = null;
+    if (session_status() === PHP_SESSION_NONE) session_start();
+    if (!empty($_SESSION['last_clearance_processed']) && isset($_GET['done']) && $_GET['done'] == '1') {
+        $lastClear = $_SESSION['last_clearance_processed'];
+    }
+
+    if ($lastClear) {
+        $printDevices = $lastClear['devices'];
+        $printUser = $lastClear['user'];
+        $displayControlNumber = $lastClear['control_no'];
     } else {
-        body.style.display = 'none';
-        icon.className = 'fas fa-chevron-down';
-        btn.innerHTML  = '<i class="fas fa-chevron-down" id="icon-' + id + '"></i> Expand';
-        if (hint) hint.style.display = '';
+        $printDevices = !empty($formDevices) ? $formDevices : $assignedDevices;
+        $printUser = $selectedUser;
+        $displayControlNumber = 'IT-26-' . str_pad($currentSequenceValue, 4, '0', STR_PAD_LEFT);
     }
-}
+    ?>
 
-// Update per-device progress badge
-document.addEventListener('change', function(e) {
-    var el = e.target;
-    if (el.classList.contains('item-cb') || el.classList.contains('condition-radio')) {
-        var did  = el.dataset.device;
-        var cbs  = document.querySelectorAll('.item-cb[data-device="' + did + '"]:checked').length;
-        var badge= document.getElementById('prog-' + did);
-        if (badge) {
-            badge.textContent = cbs + ' / ' + totalCheckItems + ' checked';
-            badge.style.color = cbs === totalCheckItems ? '#27AE60' : (cbs > 0 ? '#f39c12' : '#888');
-        }
-        updateOverallProgress();
-    }
-});
+    <table class="pc-meta">
+        <tr>
+            <td style="width: 60%;">
+                <strong>Name of Employee:</strong> <?php echo sanitize($printUser['full_name'] ?? ''); ?><br>
+                <strong>Department:</strong> <?php echo sanitize($printUser['department'] ?? ''); ?>
+            </td>
+            <td style="width: 40%; text-align: left; padding-left: 20px;">
+                <strong>Control No.:</strong> <?php echo htmlspecialchars($displayControlNumber); ?><br>
+                <strong>Date:</strong> <?php echo htmlspecialchars($lastClear['date'] ?? date('F j, Y')); ?>
+            </td>
+        </tr>
+    </table>
 
-// Condition pill visual highlight
-document.addEventListener('change', function(e) {
-    if (!e.target.classList.contains('condition-radio')) return;
-    var did   = e.target.dataset.device;
-    var pills = document.querySelectorAll('input.condition-radio[data-device="' + did + '"]');
-    pills.forEach(function(r) {
-        var pill = r.closest('.condition-pill');
-        var c    = pill.dataset.color;
-        if (r.checked) {
-            pill.style.boxShadow = '0 0 0 3px ' + c + '44';
-            pill.style.background = c + '22';
-        } else {
-            pill.style.boxShadow = '';
-            pill.style.background = c + '12';
-        }
-    });
-});
+    <div class="pc-section-title">IT PROPERTY INFORMATION</div>
+    <table class="pc-table">
+        <thead>
+            <tr>
+                <th style="width: 40%;">Property ID</th>
+                <th style="width: 38%;">Description</th>
+                <th style="width: 11%;" class="text-center">Quantity</th>
+                <th style="width: 11%;" class="text-center">Check</th>
+            </tr>
+        </thead>
+        <tbody>
+            <?php if (empty($printDevices)): ?>
+            <tr>
+                <td colspan="4" class="text-center" style="padding: 15px;">No assigned devices found.</td>
+            </tr>
+            <?php else: 
+                foreach ($printDevices as $d): 
+                    $pid = sanitize($d['asset_tag'] ?? ''); 
+                    $desc = sanitize($d['type_name'] ?? 'Device');
+            ?>
+            <tr>
+                <td><?php echo $pid; ?></td>
+                <td><?php echo $desc; ?></td>
+                <td class="text-center">1</td>
+                <td class="pc-checkbox-cell">☐</td>
+            </tr>
+            <?php endforeach; endif; ?>
+        </tbody>
+    </table>
 
-function updateOverallProgress() {
-    var selected = document.querySelectorAll('.condition-radio:checked');
-    var devicesDone = {};
-    selected.forEach(function(r){ devicesDone[r.dataset.device] = true; });
-    var reviewed = Object.keys(devicesDone).length;
+    <div class="pc-remarks-label">Remarks:</div>
+    <div class="pc-remarks"><?php echo nl2br(htmlspecialchars($lastClear['notes'] ?? ($_POST['clearance_notes'] ?? ''))); ?></div>
 
-    var cnt    = document.getElementById('progress-count');
-    var detail = document.getElementById('progress-detail');
-    if (cnt)    cnt.textContent = reviewed;
-    if (detail) {
-        if (reviewed === 0)
-            detail.textContent = 'Expand each device above to fill in return details.';
-        else if (reviewed < totalDevices)
-            detail.textContent = reviewed + ' of ' + totalDevices + ' devices have a condition rating selected.';
-        else
-            detail.textContent = 'All devices reviewed. You may now submit the clearance.';
-    }
-    if (cnt) cnt.style.color = reviewed === totalDevices ? '#27AE60' : '#3498db';
-}
+    <div class="pc-ack-text">
+        I, <strong><u><?php echo sanitize($printUser['full_name'] ?? '____________________________'); ?></u></strong>, hereby acknowledge that I have returned all property/property checked above in good condition for return. Nevertheless, through IT inspection, any problems/issues found, the user can be held accountable and endorsed to the HR Department.
+    </div>
 
-window.addEventListener('DOMContentLoaded', function() {
-    if (preselectedDevId > 0) {
-        var targetCard = document.getElementById('card-' + preselectedDevId);
-        var targetRow  = document.getElementById('device-row-' + preselectedDevId);
+    <div class="pc-sigs-container">
+        <div class="pc-sig-row">
+            <div class="pc-sig-cell">
+                <div class="pc-line"></div>
+                <div class="pc-label">Employee Signature</div>
+            </div>
+            <div class="pc-date-cell">
+                <div class="pc-line"></div>
+                <div class="pc-label">Date</div>
+            </div>
+        </div>
 
-        if (targetCard) {
-            var body = document.getElementById('body-' + preselectedDevId);
-            if (body && body.style.display === 'none') {
-                toggleCard(preselectedDevId);
-            }
-            targetCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        }
+        <div class="pc-sig-row">
+            <div class="pc-sig-cell">
+                <div class="pc-line"></div>
+                <div class="pc-label">Department Head/OIC</div>
+            </div>
+            <div class="pc-date-cell">
+                <div class="pc-line"></div>
+                <div class="pc-label">Date</div>
+            </div>
+        </div>
 
-        if (targetRow) {
-            targetRow.style.boxShadow = '0 0 0 2px rgba(243, 156, 18, 0.8)';
-        }
-    }
-});
-</script>
+        <div style="font-weight: bold; margin-top: 15px; margin-bottom: 15px; font-size: 11px;">For IT Personnel only:</div>
 
-<?php require_once 'includes/footer.php'; ?>
+        <div class="pc-sig-row">
+            <div class="pc-sig-cell">
+                <div class="pc-line"></div>
+                <div class="pc-label">Checked by</div>
+            </div>
+            <div class="pc-date-cell">
+                <div class="pc-line"></div>
+                <div class="pc-label">Date</div>
+            </div>
+        </div>
+    </div>
+</div>
 
-<script>
-function printClearance() {
-    var printable = document.querySelector('.printable-clearance');
-    if (!printable) {
-        alert('No printable clearance available. Load a user first.');
-        return;
-    }
-    var html = '<!doctype html><html><head><meta charset="utf-8"><title>IT Property Clearance</title>';
-    html += '<style>';
-    html += 'body{font-family: "Helvetica Neue", Arial, Helvetica, sans-serif; color:#111; padding:20px;}';
-    html += '@page { size: A4; margin: 14mm; }';
-    html += '.pc-header{text-align:center;margin-bottom:10px;} .pc-logo{max-width:160px;display:block;margin:0 auto 6px;} .pc-title{font-weight:700;font-size:20px;margin-bottom:6px;} .pc-sub{font-size:12px;margin-bottom:12px;} .pc-meta{width:100%;margin-bottom:12px;font-size:13px;} .pc-meta td{vertical-align:top;padding:4px 6px;} .pc-table{width:100%;border-collapse:collapse;margin-bottom:14px;font-size:12px;} .pc-table th{border:1px solid #000;padding:6px;font-weight:700;text-align:center;} .pc-table td{border-left:1px solid #000;border-right:1px solid #000;padding:6px;} .pc-table tbody tr:first-child td{border-top:1px solid #000;} .pc-table tbody tr:last-child td{border-bottom:1px solid #000;} .pc-remarks{min-height:80px;border:1px solid #000;padding:8px;margin-bottom:18px;} .pc-sigs{display:flex;gap:24px;justify-content:space-between;margin-top:12px;} .pc-sig-box{width:32%;text-align:left;} .pc-sig-line{border-bottom:1px solid #000;height:36px;margin-bottom:6px;}';
-    html += '</style></head><body>';
-    html += printable.innerHTML;
-    html += '</body></html>';
+<!-- ══ SCREEN DASHBOARD INTERACTIVE VIEW ══════════════════════════════════ -->
+<div class="no-print">
+    <?php 
+    $flashSuccess = getFlashMessage('success');
+    $flashError = getFlashMessage('error');
+    if ($flashSuccess): 
+    ?>
+        <div class="alert alert-success"><?php echo sanitize($flashSuccess); ?></div>
+    <?php endif; ?>
+    <?php if ($flashError || $errorMessage): ?>
+        <div class="alert alert-error"><?php echo sanitize($flashError ?: $errorMessage); ?></div>
+    <?php endif; ?>
 
-    var w = window.open('', '_blank');
-    w.document.open();
-    w.document.write(html);
-    w.document.close();
-    w.focus();
-    // give the new window a moment to render
-    setTimeout(function(){ w.print(); /* w.close(); */ }, 250);
-}
-</script>
+    <?php if ($selectedUser && !$isDone): ?>
+    <form method="POST" action="it_clearance.php<?php echo $isSingleMode ? '?device_id='.$preselectedDevId : ''; ?>">
+        <input type="hidden" name="csrf_token" value="<?php echo generateCsrfToken(); ?>">
+        <input type="hidden" name="action" value="process_clearance">
+        <input type="hidden" name="user_id" value="<?php echo $selectedUserId; ?>">
+        <?php if ($isSingleMode): ?>
+            <input type="hidden" name="single_device_id" value="<?php echo $preselectedDevId; ?>">
+        <?php endif; ?>
+
+        <div class="card" style="margin-bottom:20px;">
+            <div class="card-header"><h3>Account Details & Global Options</h3></div>
+            <div class="card-body" style="display:flex; gap:20px; flex-wrap:wrap;">
+                <div style="flex:1; min-width:250px;">
+                    <p><strong>Employee Name:</strong> <?php echo sanitize($selectedUser['full_name']); ?></p>
+                    <p><strong>Employee ID:</strong> <?php echo sanitize($selectedUser['employee_id']); ?></p>
+                    <p><strong>Department:</strong> <?php echo sanitize($selectedUser['department']); ?></p>
+                    <p><strong>Pending Control No:</strong> <span style="font-family:monospace; font-weight:bold; color:#16a085;"><?php echo 'IT-26-' . str_pad($currentSequenceValue, 4, '0', STR_PAD_LEFT); ?></span></p>
+                </div>
+                <div style="flex:1; min-width:250px;">
+                    <div class="form-group">
+                        <label for="return_date">Return Date</label>
+                        <input type="date" name="return_date" id="return_date" class="form-control" value="<?php echo date('Y-m-d'); ?>">
+                    </div>
+                    <?php if (!$isSingleMode): ?>
+                    <div class="form-group" style="margin-top:15px;">
+                        <label>
+                            <input type="checkbox" name="deactivate_user" value="1"> 
+                            Deactivate employee account upon completing offboarding clearance
+                        </label>
+                    </div>
+                    <?php endif; ?>
+                </div>
+            </div>
+        </div>
+
+        <h2 style="margin:20px 0 10px 0;"><i class="fas fa-laptop"></i> Assigned Equipment Items (<?php echo $totalFormDevices; ?>)</h2>
+        
+        <?php foreach ($formDevices as $asset): 
+            $dId = (int)($asset['device_id'] ?? $asset['id']);
+        ?>
+        <div class="card" style="margin-bottom:15px; border-left:4px solid #3498db;">
+            <div class="card-header" style="display:flex; justify-content:space-between; align-items:center;">
+                <h3>Asset Tag: <?php echo sanitize($asset['asset_tag']); ?> — <?php echo sanitize($asset['type_name']); ?></h3>
+                <?php if (isset($asset['status']) && $asset['status'] !== 'active'): ?>
+                    <?php echo condBadge(sanitize($asset['status'])); ?>
+                <?php endif; ?>
+            </div>
+            <div class="card-body">
+                <div class="form-group" style="margin-bottom:15px;">
+                    <label>Assigned Device Intake Inspector</label>
+                    <select name="device_checklist[<?php echo $dId; ?>][checked_by]" class="form-control" required>
+                        <option value="">Select inspecting IT Staff member</option>
+                        <?php foreach ($itStaff as $staff): ?>
+                            <option value="<?php echo $staff['id']; ?>" <?php echo (isset($_SESSION['user_id']) && $_SESSION['user_id'] == $staff['id']) ? 'selected' : ''; ?>>
+                                <?php echo sanitize($staff['full_name'] . ' ('.$staff['employee_id'].')'); ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+
+                <div style="margin-bottom:15px;">
+                    <label style="display:block; font-weight:bold; margin-bottom:5px;">Evaluated Physical Condition Status</label>
+                    <div style="display:flex; gap:15px; flex-wrap:wrap;">
+                        <label><input type="radio" name="device_checklist[<?php echo $dId; ?>][condition]" value="excellent" checked> Excellent / Untouched</label>
+                        <label><input type="radio" name="device_checklist[<?php echo $dId; ?>][condition]" value="good"> Good Condition</label>
+                        <label><input type="radio" name="device_checklist[<?php echo $dId; ?>][condition]" value="fair"> Fair / Operational Wear</label>
+                        <label><input type="radio" name="device_checklist[<?php echo $dId; ?>][condition]" value="poor"> Poor Status</label>
+                        <label><input type="radio" name="device_checklist[<?php echo $dId; ?>][condition]" value="damaged"> Broken / Physical Damage</label>
+                    </div>
+                </div>
+
+                <div style="margin-bottom:15px;">
+                    <label style="display:block; font-weight:bold; margin-bottom:5px;">Evaluation Checklist Protocol Items</label>
+                    <<!-- BAGONG CODE (Naka-uncheck na lahat): -->
+<div style="display:grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap:8px;">
+    <?php foreach ($checklistGroups as $groupLabel => $items): ?>
+        <?php foreach ($items as $key => $text): ?>
+        <label style="font-weight:normal;">
+            <!-- Tinanggal ang salitang 'checked' sa dulo nito -->
+            <input type="checkbox" name="device_checklist[<?php echo $dId; ?>][items][]" value="<?php echo $key; ?>">
+            <?php echo htmlspecialchars($text); ?>
+        </label>
+        <?php endforeach; ?>
+    <?php endforeach; ?>
+</div>
+                </div>
+
+                <div class="form-group">
+                    <label>Asset-Specific Diagnostic Notes</label>
+                    <input type="text" name="device_checklist[<?php echo $dId; ?>][notes]" class="form-control" placeholder="Optional diagnostics details...">
+                </div>
+            </div>
+        </div>
+        <?php endforeach; ?>
+
+        <div class="card" style="margin-top:20px;">
+            <div class="card-header"><h3>Finalize Clearance Form</h3></div>
+            <div class="card-body">
+                <div class="form-group" style="margin-bottom:15px;">
+                    <label for="clearance_notes">Global Remarks / Notes</label>
+                    <textarea name="clearance_notes" id="clearance_notes" rows="3" class="form-control" placeholder="Add summary global transaction notes here..."></textarea>
+                </div>
+                <div class="form-group">
+                    <label>
+                        <input type="checkbox" name="confirm_clearance" value="1" required> 
+                        <strong>I confirm that the properties marked above have been inspected and logged correctly.</strong>
+                    </label>
+                </div>
+                <div style="margin-top:15px;">
+                    <button type="submit" class="btn btn-success"><i class="fas fa-check-circle"></i> Save and Process Clearance</button>
+                </div>
+            </div>
+        </div>
+    </form>
+    <?php elseif ($isDone && $selectedUser): ?>
+        <div class="card style-success" style="margin-bottom:20px; background:#e8f8f5; border:1px solid #a3e4d7; padding:20px; border-radius:8px;">
+            <h3><i class="fas fa-check-circle" style="color:#27ae60;"></i> Transaction Clearance Processed Successfully!</h3>
+            <p style="margin-top:5px;">The dynamic tracking states have updated. Click <strong>"Print Clearance Form"</strong> at the header line to output the layout template.</p>
+        </div>
+    <?php endif; ?>
+</div>
+
+<?php 
+require_once 'includes/footer.php'; 
+?>

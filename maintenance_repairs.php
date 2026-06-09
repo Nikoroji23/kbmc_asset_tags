@@ -688,15 +688,10 @@ usort($allMaintenanceMerged, function($a, $b) {
     margin-top: 6px;
 }
 
-/* For dispose modal: place Cancel immediately left of primary action */
-.dispose-modal .modal-box {
-    padding-bottom: 22px;
-}
+/* For dispose modal: show cancel on left and primary action on right */
 .dispose-modal .form-footer {
-    justify-content: flex-end;
+    justify-content: space-between;
     align-items: center;
-    padding: 12px 24px;
-    gap: 12px;
 }
 
 .action-btns {
