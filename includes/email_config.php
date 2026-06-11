@@ -13,7 +13,7 @@ if (file_exists($primaryEmailConfig)) {
         'from_name'  => 'KBMC Asset Management',
     ];
 
-    function sendEmail($to, $subject, $body, $html = true) {
+    function sendEmail($to, $subject, $body, $html = true, $attachments = []) {
         return [
             'success' => false,
             'message' => 'Email system not configured. Please set up includes/email_config.php',

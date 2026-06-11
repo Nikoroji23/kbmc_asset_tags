@@ -32,6 +32,19 @@ if (!empty($assignedDevices)) {
 }
 
 $search = $_GET['search'] ?? '';
+
+$currentUserStmt = $pdo->prepare("SELECT employee_id, full_name, department, position, email FROM users WHERE id = ? LIMIT 1");
+$currentUserStmt->execute([$userId]);
+$currentUser = $currentUserStmt->fetch(PDO::FETCH_ASSOC);
+if (!$currentUser) {
+    $currentUser = [
+        'employee_id' => '',
+        'full_name'   => '',
+        'department'  => '',
+        'position'    => '',
+        'email'       => $userEmail,
+    ];
+}
 ?>
 
 <style>
@@ -377,6 +390,12 @@ $search = $_GET['search'] ?? '';
         <h3><i class="fas fa-list"></i> Your Devices (<?php echo count($assignedDevices); ?> Total)</h3>
     </div>
     <div class="card-body">
+        <div style="background: #eaf4ff; border: 1px solid #b6d9ff; color: #0f4c81; padding: 18px 20px; border-radius: 10px; margin-bottom: 20px;">
+            <h4 style="margin: 0 0 8px 0; font-size: 16px;">Change Request Form</h4>
+            <p style="margin: 0; font-size: 14px; line-height: 1.6;">
+                To request a device change, click the <strong>Change Request Form</strong> button in the Actions column. A fillable form will open first. After you submit it, IT staff will receive the request as a printable PDF.
+            </p>
+        </div>
         <?php if (!empty($assignedDevices)): ?>
         <div class="data-table-wrapper">
             <table class="data-table">
@@ -526,20 +545,63 @@ $search = $_GET['search'] ?? '';
         <div style="background: #eaf2f8; border-left: 4px solid #2980b9; padding: 16px 24px; margin: 0;">
             <p style="margin: 0; color: #1b4f72; font-size: 13px; display: flex; align-items: center; gap: 8px;">
                 <i class="fas fa-info-circle"></i>
-                <strong>IT staff will be notified and will contact you to review your change form.</strong>
+                <strong>Fill this form first before submitting. IT staff will receive a printable PDF copy.</strong>
             </p>
+            <p style="margin: 8px 0 0 0; color: #1b4f72; font-size: 12px;">Complete every section, then click Submit. The request will be packaged as a PDF and sent to IT.</p>
         </div>
 
         <div style="padding: 28px;">
             <form id="changeRequestForm" method="POST">
-                <div style="margin-bottom: 20px;">
-                    <label style="display: block; font-weight: 700; margin-bottom: 8px; color: #2c3e50; font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px;">Device</label>
-                    <input type="text" id="changeDeviceTag" readonly style="background: #f0f2f5; padding: 12px 14px; border: 2px solid #e8eaed; border-radius: 8px; width: 100%; font-size: 15px; color: #555; font-weight: 600;">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-bottom: 20px;">
+                    <div>
+                        <label style="display: block; font-weight: 700; margin-bottom: 6px; color: #2c3e50; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px;">Requestor Name</label>
+                        <input id="changeRequestorName" type="text" readonly value="<?= htmlspecialchars($currentUser['full_name']) ?>" style="width: 100%; padding: 12px 14px; border: 2px solid #e8eaed; border-radius: 8px; background: #f7f9fb; color: #333;" />
+                    </div>
+                    <div>
+                        <label style="display: block; font-weight: 700; margin-bottom: 6px; color: #2c3e50; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px;">Employee ID</label>
+                        <input id="changeEmployeeId" type="text" readonly value="<?= htmlspecialchars($currentUser['employee_id']) ?>" style="width: 100%; padding: 12px 14px; border: 2px solid #e8eaed; border-radius: 8px; background: #f7f9fb; color: #333;" />
+                    </div>
+                    <div>
+                        <label style="display: block; font-weight: 700; margin-bottom: 6px; color: #2c3e50; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px;">Department</label>
+                        <input id="changeDepartment" type="text" readonly value="<?= htmlspecialchars($currentUser['department']) ?>" style="width: 100%; padding: 12px 14px; border: 2px solid #e8eaed; border-radius: 8px; background: #f7f9fb; color: #333;" />
+                    </div>
+                    <div>
+                        <label style="display: block; font-weight: 700; margin-bottom: 6px; color: #2c3e50; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px;">E-mail Address</label>
+                        <input id="changeRequesterEmail" type="text" readonly value="<?= htmlspecialchars($currentUser['email']) ?>" style="width: 100%; padding: 12px 14px; border: 2px solid #e8eaed; border-radius: 8px; background: #f7f9fb; color: #333;" />
+                    </div>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-bottom: 24px;">
+                    <div>
+                        <label style="display: block; font-weight: 700; margin-bottom: 6px; color: #2c3e50; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px;">Request Date</label>
+                        <input type="text" readonly value="<?= date('Y-m-d') ?>" style="width: 100%; padding: 12px 14px; border: 2px solid #e8eaed; border-radius: 8px; background: #f7f9fb; color: #333;" />
+                    </div>
+                    <div>
+                        <label style="display: block; font-weight: 700; margin-bottom: 6px; color: #2c3e50; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px;">Device</label>
+                        <input type="text" id="changeDeviceTag" readonly style="width: 100%; padding: 12px 14px; border: 2px solid #e8eaed; border-radius: 8px; background: #f7f9fb; color: #333; font-weight: 600;" />
+                    </div>
                 </div>
 
                 <div style="margin-bottom: 24px;">
-                    <label style="display: block; font-weight: 700; margin-bottom: 8px; color: #2c3e50; font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px;">Reason for Change Request Form</label>
-                    <textarea id="changeReason" name="change_reason" style="width: 100%; height: 100px; padding: 12px 14px; border: 2px solid #e8eaed; border-radius: 8px; font-family: 'Segoe UI', Arial, sans-serif; font-size: 14px; resize: vertical; transition: border 0.2s;" placeholder="Tell us why you are submitting this change request form..." onfocus="this.style.borderColor='#2980b9';" onblur="this.style.borderColor='#e8eaed';"></textarea>
+                    <label style="display: block; font-weight: 700; margin-bottom: 8px; color: #2c3e50; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px;">Type of Change</label>
+                    <select id="changeType" name="change_type" required style="width: 100%; padding: 12px 14px; border: 2px solid #e8eaed; border-radius: 8px; background: white; font-size: 14px; color: #333; cursor: pointer;">
+                        <option value="">Select change type...</option>
+                        <option value="Hardware">Hardware</option>
+                        <option value="Software/Application">Software / Application</option>
+                        <option value="Network">Network</option>
+                        <option value="Access / Permissions">Access / Permissions</option>
+                        <option value="Replacement">Replacement</option>
+                        <option value="Other">Other</option>
+                    </select>
+                </div>
+
+                <div style="margin-bottom: 24px;">
+                    <label style="display: block; font-weight: 700; margin-bottom: 8px; color: #2c3e50; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px;">Request Details</label>
+                    <textarea id="changeDetails" name="change_details" required style="width: 100%; min-height: 140px; padding: 12px 14px; border: 2px solid #e8eaed; border-radius: 8px; font-family: 'Segoe UI', Arial, sans-serif; font-size: 14px; resize: vertical; transition: border 0.2s;" placeholder="Describe the change you need, the reason, and any supporting details..." onfocus="this.style.borderColor='#2980b9';" onblur="this.style.borderColor='#e8eaed';"></textarea>
+                </div>
+
+                <div style="font-size: 12px; color: #606f7b; margin-bottom: 24px;">
+                    <strong>Note:</strong> This form is a request only. IT staff will review the details and contact you to schedule next steps.
                 </div>
 
                 <input type="hidden" id="changeAssignmentId" name="assignment_id">
@@ -596,9 +658,9 @@ document.getElementById('reportIssueModal').addEventListener('click', function(e
 
 // Change Request Functions
 function openChangeRequestForm(assignmentId, assetTag) {
+    document.getElementById('changeRequestForm').reset();
     document.getElementById('changeAssignmentId').value = assignmentId;
     document.getElementById('changeDeviceTag').value = assetTag;
-    document.getElementById('changeRequestForm').reset();
     document.getElementById('changeRequestModal').style.display = 'flex';
 }
 
@@ -610,8 +672,82 @@ document.getElementById('changeRequestForm').addEventListener('submit', function
     e.preventDefault();
     
     const assignmentId = document.getElementById('changeAssignmentId').value;
-    const changeReason = document.getElementById('changeReason').value;
-    
+    const changeType = document.getElementById('changeType').value;
+    const changeDetails = document.getElementById('changeDetails').value.trim();
+    const deviceTag = document.getElementById('changeDeviceTag').value;
+    const requestorName = document.getElementById('changeRequestorName').value;
+    const employeeId = document.getElementById('changeEmployeeId').value;
+    const department = document.getElementById('changeDepartment').value;
+    const requesterEmail = document.getElementById('changeRequesterEmail').value;
+
+    if (!changeType) {
+        alert('Please select the type of change request.');
+        return;
+    }
+    if (!changeDetails) {
+        alert('Please describe the requested change.');
+        return;
+    }
+
+    if (typeof window.jspdf === 'undefined' || typeof window.jspdf.jsPDF === 'undefined') {
+        alert('PDF generation is not available in this browser. Please contact IT to submit this request manually.');
+        return;
+    }
+
+    const doc = new window.jspdf.jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' });
+    const margin = 40;
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const maxLineWidth = pageWidth - margin * 2;
+    const titleText = 'Device Change Request Form';
+    const requestDate = new Date().toLocaleString('en-US', { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+
+    doc.setFontSize(18);
+    doc.text(titleText, margin, 50);
+    doc.setDrawColor(34, 85, 170);
+    doc.setLineWidth(1.5);
+    doc.line(margin, 60, pageWidth - margin, 60);
+
+    doc.setFontSize(12);
+    let y = 85;
+
+    // Write form fields manually
+    doc.setFontSize(11);
+    doc.text('Requestor Name:', margin, y);
+    doc.text(requestorName, margin + 140, y);
+    y += 20;
+    doc.text('Employee ID:', margin, y);
+    doc.text(employeeId, margin + 140, y);
+    y += 20;
+    doc.text('Department:', margin, y);
+    doc.text(department, margin + 140, y);
+    y += 20;
+    doc.text('Email Address:', margin, y);
+    doc.text(requesterEmail, margin + 140, y);
+    y += 20;
+    doc.text('Request Date:', margin, y);
+    doc.text(requestDate, margin + 140, y);
+    y += 25;
+    doc.text('Device:', margin, y);
+    doc.text(deviceTag, margin + 140, y);
+    y += 25;
+    doc.text('Type of Change:', margin, y);
+    doc.text(changeType, margin + 140, y);
+    y += 30;
+    doc.text('Request Details:', margin, y);
+    y += 18;
+
+    const detailsLines = doc.splitTextToSize(changeDetails, maxLineWidth - 20);
+    doc.text(detailsLines, margin + 10, y);
+    y += detailsLines.length * 14 + 20;
+
+    doc.setFontSize(10);
+    doc.setTextColor(100);
+    doc.text('This form is a request only. IT staff will review the details and contact you to schedule next steps.', margin, y);
+
+    const pdfDataUri = doc.output('datauristring');
+    const base64Pdf = pdfDataUri.split('base64,')[1];
+    const filename = 'change_request_' + assignmentId + '_' + Math.floor(Date.now() / 1000) + '.pdf';
+
     fetch('api_change_request_form.php', {
         method: 'POST',
         headers: {
@@ -619,10 +755,26 @@ document.getElementById('changeRequestForm').addEventListener('submit', function
         },
         body: JSON.stringify({
             assignment_id: assignmentId,
-            change_reason: changeReason
+            change_type: changeType,
+            change_details: changeDetails,
+            pdf_base64: base64Pdf,
+            pdf_filename: filename
         })
     })
-    .then(response => response.json())
+    .then(function(response) {
+        return response.text().then(function(text) {
+            var data;
+            try {
+                data = text ? JSON.parse(text) : {};
+            } catch (parseError) {
+                throw new Error('Invalid server response: ' + text);
+            }
+            if (!response.ok) {
+                throw new Error(data.message || 'Server error: ' + response.status);
+            }
+            return data;
+        });
+    })
     .then(data => {
         if (data.success) {
             alert('Your change request form has been submitted successfully. IT staff will contact you to review your request.');
@@ -634,7 +786,7 @@ document.getElementById('changeRequestForm').addEventListener('submit', function
     })
     .catch(error => {
         console.error('Error:', error);
-        alert('Failed to submit change request form. Please try again.');
+        alert('Failed to submit change request form. Please try again. ' + error.message);
     });
 });
 

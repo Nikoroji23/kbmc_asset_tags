@@ -439,6 +439,35 @@ function ensureUserSecuritySchema() {
     }
 }
 
+function ensureChangeRequestSchema() {
+    static $checked = false;
+    if ($checked) {
+        return;
+    }
+    $checked = true;
+
+    if (!tableExists('device_assignments')) {
+        return;
+    }
+
+    try {
+        if (!columnExists('device_assignments', 'change_request_type')) {
+            $GLOBALS['pdo']->exec("ALTER TABLE device_assignments ADD COLUMN change_request_type VARCHAR(100) DEFAULT NULL AFTER notes");
+        }
+        if (!columnExists('device_assignments', 'change_request_details')) {
+            $GLOBALS['pdo']->exec("ALTER TABLE device_assignments ADD COLUMN change_request_details TEXT DEFAULT NULL AFTER change_request_type");
+        }
+        if (!columnExists('device_assignments', 'change_request_pdf_url')) {
+            $GLOBALS['pdo']->exec("ALTER TABLE device_assignments ADD COLUMN change_request_pdf_url VARCHAR(255) DEFAULT NULL AFTER change_request_details");
+        }
+        if (!columnExists('device_assignments', 'change_request_submitted_at')) {
+            $GLOBALS['pdo']->exec("ALTER TABLE device_assignments ADD COLUMN change_request_submitted_at DATETIME DEFAULT NULL AFTER change_request_pdf_url");
+        }
+    } catch (PDOException $e) {
+        // If ALTER TABLE fails, continue gracefully.
+    }
+}
+
 function addNotification($userId, $type, $title, $message, $relatedId = null) {
     global $pdo;
     // Prepare notification data and compute recipient-specific URL
@@ -515,7 +544,7 @@ function addNotificationIfNotExists($userId, $type, $title, $message, $relatedId
     return addNotification($userId, $type, $title, $message, $relatedId);
 }
 
-function notifyITStaff($type, $title, $message, $related_id = 0) {
+function notifyITStaff($type, $title, $message, $related_id = 0, $emailAttachments = []) {
     global $pdo;
     error_log("[NOTIFY_IT_STAFF] Called with: type='$type', title='$title', related_id=$related_id");
     
@@ -523,33 +552,33 @@ function notifyITStaff($type, $title, $message, $related_id = 0) {
     $itUsers = $pdo->query("SELECT id, email, full_name FROM users WHERE role IN ('admin', 'it_staff') AND status = 'active'")->fetchAll();
     error_log("[NOTIFY_IT_STAFF] Found " . count($itUsers) . " IT staff members");
     
-        // Create per-user system notifications (uses addSystemNotificationOnly to compute URL)
-        foreach ($itUsers as &$user) {
-            try {
-                $nid = addSystemNotificationOnly($user['id'], $type, $title, $message, $related_id);
-                // Ensure $user carries the computed URL for email sending
-                $notif = [
-                    'user_id' => $user['id'],
-                    'type' => $type,
-                    'title' => $title,
-                    'message' => $message,
-                    'related_id' => $related_id
-                ];
-                $user['url'] = getNotificationUrl($notif, $user['role'] ?? null);
-                error_log("[NOTIFY_IT_STAFF] Inserted notification id={$nid} for user {$user['id']} url=" . ($user['url'] ?? 'NULL'));
-            } catch (Exception $e) {
-                error_log("[NOTIFY_IT_STAFF] ❌ Failed to create notification for user {$user['id']}: " . $e->getMessage());
-            }
+    // Create per-user system notifications (uses addSystemNotificationOnly to compute URL)
+    foreach ($itUsers as &$user) {
+        try {
+            $nid = addSystemNotificationOnly($user['id'], $type, $title, $message, $related_id);
+            // Ensure $user carries the computed URL for email sending
+            $notif = [
+                'user_id' => $user['id'],
+                'type' => $type,
+                'title' => $title,
+                'message' => $message,
+                'related_id' => $related_id
+            ];
+            $user['url'] = getNotificationUrl($notif, $user['role'] ?? null);
+            error_log("[NOTIFY_IT_STAFF] Inserted notification id={$nid} for user {$user['id']} url=" . ($user['url'] ?? 'NULL'));
+        } catch (Exception $e) {
+            error_log("[NOTIFY_IT_STAFF] ❌ Failed to create notification for user {$user['id']}: " . $e->getMessage());
         }
+    }
     
     // Send email notifications to all IT staff for ALL notification types
     if (isEmailConfigured() && !empty($itUsers)) {
         error_log("[NOTIFY_IT_STAFF_EMAIL] Sending email for type='$type' to " . count($itUsers) . " IT staff members");
-        sendEmailNotificationToITStaff($type, $title, $message, $related_id, $itUsers);
+        sendEmailNotificationToITStaff($type, $title, $message, $related_id, $itUsers, $emailAttachments);
     }
 }
 
-function sendEmailNotificationToITStaff($type, $title, $message, $related_id, $itUsers) {
+function sendEmailNotificationToITStaff($type, $title, $message, $related_id, $itUsers, $attachments = []) {
     global $pdo;
     
     // Get additional context based on notification type
@@ -656,18 +685,43 @@ function sendEmailNotificationToITStaff($type, $title, $message, $related_id, $i
         // Prefer precomputed per-staff URL when available
         $personalUrl = $staff['url'] ?? ($actionUrl ? ('http://' . $_SERVER['HTTP_HOST'] . dirname($_SERVER['PHP_SELF']) . '/' . $actionUrl) : '');
 
+        // If attachments include a public URL (e.g., generated PDF), keep it for attachment handling.
+        // But for clearance requests we want IT staff to land in the system page where they can print the official IT form.
+        $attachmentUrl = '';
+        if (!empty($attachments) && is_array($attachments)) {
+            foreach ($attachments as $att) {
+                if (!empty($att['url'])) {
+                    $attachmentUrl = $att['url'];
+                    break;
+                }
+            }
+        }
+
+        $buttonText = '';
+        $buttonUrl = '';
+        if ($type === 'user_clearance_required' && $personalUrl) {
+            $buttonText = 'Open IT Clearance';
+            $buttonUrl = $personalUrl;
+        } elseif ($attachmentUrl) {
+            $buttonText = 'Print PDF';
+            $buttonUrl = $attachmentUrl;
+        } elseif ($personalUrl) {
+            $buttonText = 'Review in System';
+            $buttonUrl = $personalUrl;
+        }
+
         $emailBody = emailTemplate(
             $title,
             "<p>Hello <strong>" . sanitize($staff['full_name']) . "</strong>,</p>
             <p>" . sanitize($message) . "</p>" .
             $context .
             "<p style='margin-top: 20px; color: #666; font-size: 14px;'>This is an automated notification from the KBMC Asset Management System. Please review and take action as needed.</p>",
-            $personalUrl ? 'Review in System' : '',
-            $personalUrl
+            $buttonText,
+            $buttonUrl
         );
         
         $subject = '[KBMC Alert] ' . $title;
-        $result = sendEmail($staff['email'], $subject, $emailBody);
+        $result = sendEmail($staff['email'], $subject, $emailBody, true, $attachments);
         
         if ($result['success'] ?? false) {
             error_log("[NOTIFY_IT_STAFF_EMAIL] ✓ Email sent to " . $staff['email']);

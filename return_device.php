@@ -10,7 +10,7 @@ requireLogin();
 $assignmentId = isset($_GET['id']) ? (int)$_GET['id'] : 0;
 
 $assignmentStmt = $pdo->prepare(
-    "SELECT da.*, u.full_name as employee_name, u.department, u.position,
+    "SELECT da.*, u.full_name as employee_name, u.department, u.position, u.email,
             ub.full_name as assigned_by_name
      FROM device_assignments da
      JOIN users u ON da.employee_id = u.id
@@ -64,30 +64,28 @@ $stmt = $pdo->prepare(
 $stmt->execute([$device['id']]);
 $repairs = $stmt->fetchAll();
 
-// DEBUG: Log the change request submission attempt
-error_log("[CHANGE_REQUEST_DEBUG] Checking conditions...");
-error_log("[CHANGE_REQUEST_DEBUG] mode=" . (isset($_GET['mode']) ? $_GET['mode'] : 'NOT SET'));
-error_log("[CHANGE_REQUEST_DEBUG] currentAssignment exists: " . ($currentAssignment ? 'YES' : 'NO'));
-error_log("[CHANGE_REQUEST_DEBUG] isEmployee: " . (hasRole('employee') ? 'YES' : 'NO'));
-error_log("[CHANGE_REQUEST_DEBUG] session user_id: " . (isset($_SESSION['user_id']) ? $_SESSION['user_id'] : 'NOT SET'));
-error_log("[CHANGE_REQUEST_DEBUG] assignment employee_id: " . ($currentAssignment ? $currentAssignment['employee_id'] : 'N/A'));
-if ($currentAssignment && isset($_SESSION['user_id'])) {
-    error_log("[CHANGE_REQUEST_DEBUG] IDs match: " . ((int)$_SESSION['user_id'] === (int)$currentAssignment['employee_id'] ? 'YES' : 'NO'));
-}
+$showChangeRequestForm = false;
 
 if (isset($_GET['mode']) && $_GET['mode'] === 'voluntary' && $currentAssignment && hasRole('employee') && isset($_SESSION['user_id']) && (int)$_SESSION['user_id'] === (int)$currentAssignment['employee_id']) {
-    error_log("[CHANGE_REQUEST] ✓ ALL CONDITIONS MET - Creating notification");
-    $returnUrl = 'return_device.php?id=' . urlencode($currentAssignment['id']);
-    
-    // Updated system title and administrative activity feed alert logs
-    $title = 'Device Change Requested';
-    $message = "Employee {$currentAssignment['employee_name']} submitted a change request form for device {$device['asset_tag']}. Please review user clearance.";
+    $showChangeRequestForm = true;
+}
 
-    error_log("[CHANGE_REQUEST] Calling notifyITStaff with assignment_id=" . $currentAssignment['id']);
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'submit_change_request') {
+    $changeType = trim($_POST['change_type'] ?? '');
+    $changeDetails = trim($_POST['change_details'] ?? '');
+
+    if ($changeType === '' || $changeDetails === '') {
+        setFlashMessage('error', 'Please fill in all change request fields.');
+        header('Location: return_device.php?id=' . urlencode($currentAssignment['id']) . '&mode=voluntary');
+        exit();
+    }
+
+    $title = 'Device Change Requested';
+    $message = "Employee {$currentAssignment['employee_name']} submitted a change request form for device {$device['asset_tag']}.";
+    $message .= " Type: {$changeType}. Details: {$changeDetails}";
+
     notifyITStaff('user_clearance_required', $title, $message, $currentAssignment['id']);
-    error_log("[CHANGE_REQUEST] notifyITStaff completed");
-    
-    // Updated notification summary line for the employee profile menu
+
     addNotificationIfNotExists(
         $_SESSION['user_id'],
         'voluntary_return_requested',
@@ -95,11 +93,9 @@ if (isset($_GET['mode']) && $_GET['mode'] === 'voluntary' && $currentAssignment 
         "Your change request for {$device['asset_tag']} has been sent to IT for clearance.",
         $device['id']
     );
-    error_log("[CHANGE_REQUEST] addNotificationIfNotExists completed");
 
-    // Success Flash Notification Message shown in green alert container box
     setFlashMessage('success', 'Your change request form has been sent to IT. IT staff will contact you soon.');
-    redirect($returnUrl);
+    redirect('view_device.php?id=' . urlencode($device['id']));
 }
 ?>
 
@@ -112,6 +108,82 @@ if (isset($_GET['mode']) && $_GET['mode'] === 'voluntary' && $currentAssignment 
         <?php endif; ?>
     </div>
 </div>
+
+<?php if (!empty($showChangeRequestForm)): ?>
+<div style="max-width:1000px;margin:0 auto;padding:0 12px;">
+    <div style="background:#fff;border:1px solid #d1d5db;border-radius:16px;overflow:hidden;margin-bottom:24px;font-family:Arial,Helvetica,sans-serif;color:#172134;">
+        <div style="padding:32px 30px 24px;border-bottom:1px solid #e5e7eb;">
+            <div style="display:flex;flex-direction:column;align-items:center;gap:16px;text-align:center;">
+                <img src="assets/images/kbmc_logo_flat.png" alt="KBMC Logo" style="height:56px; width:auto; object-fit:contain;" />
+                <div>
+                    <div style="font-size:10px;font-weight:800;letter-spacing:0.05em;color:#FF0000;">Kitchen Beauty Marketing Corporation</div>
+                    <div style="font-size:13px;color:#475569;margin-top:8px;line-height:1.6;">Camangyanan Road, Sta. Rosa 2, Marilao 3019, Bulacan, Philippines</div>
+                    <div style="font-size:13px;color:#475569;margin-top:3px;">(632) 8242 1731</div>
+                </div>
+                <div style="font-size:28px;font-weight:800;color:#111827;letter-spacing:0.08em;">CHANGE REQUEST FORM</div>
+                <div style="margin-top:6px;font-size:13px;color:#111827;">Change Request No.: <strong style="display:inline-block;width:70px;text-align:center;"><?php echo str_pad(max(0, intval($currentAssignment['id']) - 1), 4, '0', STR_PAD_LEFT); ?></strong></div>
+            </div>
+        </div>
+
+        <form id="changeRequestForm" method="POST" style="padding:24px 30px;">
+            <input type="hidden" id="changeAssignmentId" name="assignment_id" value="<?php echo intval($currentAssignment['id']); ?>">
+            <input type="hidden" id="changeDeviceId" name="device_id" value="<?php echo intval($device['id']); ?>">
+            <input type="hidden" id="changeDeviceTag" name="device_tag" value="<?php echo htmlspecialchars($device['asset_tag']); ?>">
+            <input type="hidden" id="changeRequestorName" name="requestor_name" value="<?php echo htmlspecialchars($currentAssignment['employee_name']); ?>">
+            <input type="hidden" id="changeEmployeeId" name="employee_id" value="<?php echo intval($currentAssignment['employee_id']); ?>">
+            <input type="hidden" id="changeDepartment" name="department" value="<?php echo htmlspecialchars($currentAssignment['department']); ?>">
+
+            <div style="margin-bottom:18px;padding:12px 16px;background:#111827;color:#fff;font-size:13px;font-weight:700;border-radius:6px;letter-spacing:0.05em;">GENERAL INFORMATION (TO BE ACCOMPLISHED BY CLIENT)</div>
+            <table style="width:100%;border-collapse:collapse;font-size:13px;margin-bottom:24px;">
+                <tr>
+                    <td style="width:17%;padding:10px 12px;border:1px solid #111827;font-weight:700;background:#f8fafc;">Requestor Name:</td>
+                    <td style="padding:10px 12px;border:1px solid #111827;"><?php echo htmlspecialchars($currentAssignment['employee_name']); ?></td>
+                    <td style="padding:10px 12px;border:1px solid #111827;font-weight:700;background:#f8fafc;">Department:</td>
+                    <td style="padding:10px 12px;border:1px solid #111827;"><?php echo htmlspecialchars($currentAssignment['department']); ?></td>
+                </tr>
+                <tr>
+                    <td style="padding:10px 12px;border:1px solid #111827;font-weight:700;background:#f8fafc;">E-mail Address:</td>
+                    <td style="padding:10px 12px;border:1px solid #111827;"><?php echo htmlspecialchars($currentAssignment['email'] ?? ''); ?></td>
+                    <td style="padding:10px 12px;border:1px solid #111827;font-weight:700;background:#f8fafc;">Date of Request:</td>
+                    <td style="padding:10px 12px;border:1px solid #111827;"><?php echo date('Y-m-d'); ?></td>
+                </tr>
+            </table>
+
+            <div style="margin-bottom:18px;padding:12px 16px;background:#111827;color:#fff;font-size:13px;font-weight:700;border-radius:6px;letter-spacing:0.05em;">SECTION 1: CHANGE REQUEST (TO BE ACCOMPLISHED BY CLIENT)</div>
+            <div style="font-size:13px;color:#111827;margin-bottom:12px;font-weight:700;">1.1 Type of Change: Please select one (1)</div>
+            <div style="display:grid;grid-template-columns:repeat(2, minmax(0, 1fr));gap:10px;margin-bottom:18px;">
+                <label style="display:flex;align-items:center;gap:10px;font-size:13px;">
+                    <input type="radio" name="change_type" value="Hardware" style="width:16px;height:16px;"> Hardware
+                </label>
+                <label style="display:flex;align-items:center;gap:10px;font-size:13px;">
+                    <input type="radio" name="change_type" value="Application / Software" style="width:16px;height:16px;"> Application / Software
+                </label>
+                <label style="display:flex;align-items:center;gap:10px;font-size:13px;">
+                    <input type="radio" name="change_type" value="Email" style="width:16px;height:16px;"> Email
+                </label>
+                <label style="display:flex;align-items:center;gap:10px;font-size:13px;">
+                    <input type="radio" name="change_type" value="Network" style="width:16px;height:16px;"> Network
+                </label>
+                <label style="display:flex;align-items:center;gap:10px;font-size:13px;">
+                    <input type="radio" name="change_type" value="Operating System" style="width:16px;height:16px;"> Operating System
+                </label>
+            </div>
+            <div style="margin-bottom:8px;font-size:13px;font-weight:700;color:#111827;">Please specify the data/setup changes:</div>
+            <textarea id="changeDetails" name="change_details" required style="width:100%;min-height:210px;padding:14px;border:1px solid #111827;border-radius:6px;font-size:13px;line-height:1.6;color:#111827;"><?php echo htmlspecialchars($_POST['change_details'] ?? ''); ?></textarea>
+
+            <input type="hidden" name="action" value="submit_change_request">
+
+            <div style="margin-top:22px;display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px;align-items:center;">
+                <div style="font-size:12px;color:#475569;">Note: Provide supporting documents/references (if applicable)</div>
+                <div style="display:flex;gap:10px;flex-wrap:wrap;">
+                    <a href="view_device.php?id=<?php echo intval($device['id']); ?>" class="btn btn-outline" style="padding:11px 22px;border-radius:8px;">Cancel</a>
+                    <button type="submit" class="btn btn-primary" style="padding:11px 24px;border-radius:8px;">Submit Request</button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+<?php endif; ?>
 
 <div class="grid-2">
 
@@ -316,5 +388,177 @@ if (isset($_GET['mode']) && $_GET['mode'] === 'voluntary' && $currentAssignment 
         <?php endif; ?>
     </div>
 </div>
+
+<script>
+(function() {
+    var form = document.getElementById('changeRequestForm');
+    if (!form) return;
+
+    form.addEventListener('submit', function(e) {
+        e.preventDefault();
+
+        var assignmentId = document.getElementById('changeAssignmentId').value;
+        var selectedTypeInput = document.querySelector('input[name="change_type"]:checked');
+        var changeType = selectedTypeInput ? selectedTypeInput.value : '';
+        var changeDetails = document.getElementById('changeDetails').value.trim();
+        var deviceTag = document.getElementById('changeDeviceTag').value;
+        var deviceId = document.getElementById('changeDeviceId').value;
+        var requestorName = document.getElementById('changeRequestorName').value;
+        var employeeId = document.getElementById('changeEmployeeId').value;
+        var department = document.getElementById('changeDepartment').value;
+        var requestDate = new Date().toLocaleString('en-US', { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+
+        if (!changeType) {
+            alert('Please select the type of change request.');
+            return;
+        }
+        if (!changeDetails) {
+            alert('Please describe the requested change.');
+            return;
+        }
+
+        if (typeof window.jspdf === 'undefined' || typeof window.jspdf.jsPDF === 'undefined') {
+            alert('PDF generation is not available in this browser. Please contact IT to submit this request manually.');
+            return;
+        }
+
+        var doc = new window.jspdf.jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' });
+        var margin = 40;
+        var pageWidth = doc.internal.pageSize.getWidth();
+        var maxLineWidth = pageWidth - margin * 2;
+
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(18);
+        doc.text('CHANGE REQUEST FORM', margin, 50);
+
+        doc.setFontSize(10);
+        doc.setFont('helvetica', 'normal');
+        doc.text('KITCHEN BEAUTY MARKETING CORPORATION', margin, 68);
+        doc.text('Camangyanan Road, Sta. Rosa 2, Marilao 3019, Bulacan, Philippines', margin, 80);
+
+        doc.setDrawColor(34, 85, 170);
+        doc.setLineWidth(1.8);
+        doc.line(margin, 94, pageWidth - margin, 94);
+
+        var y = 116;
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(12);
+        doc.text('GENERAL INFORMATION', margin, y);
+
+        y += 18;
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(11);
+        doc.text('Requestor Name:', margin, y);
+        doc.text(requestorName, margin + 150, y);
+        y += 18;
+        doc.text('Employee ID:', margin, y);
+        doc.text(employeeId, margin + 150, y);
+        y += 18;
+        doc.text('Department:', margin, y);
+        doc.text(department, margin + 150, y);
+        y += 18;
+        doc.text('Request Date:', margin, y);
+        doc.text(requestDate, margin + 150, y);
+        y += 18;
+        doc.text('Device:', margin, y);
+        doc.text(deviceTag, margin + 150, y);
+
+        y += 28;
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(12);
+        doc.text('CHANGE REQUEST', margin, y);
+
+        y += 18;
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(11);
+        doc.text('Type of Change:', margin, y);
+
+        // Render checkbox list for Type of Change with selected item checked (draw square boxes and X for selected)
+        var changeOptions = ['Hardware', 'Application / Software', 'Email', 'Network', 'Operating System'];
+        var checkboxX = margin + 150;
+        var checkboxY = y;
+        var lineHeight = 18;
+        var boxSize = 10;
+        doc.setLineWidth(0.8);
+        for (var i = 0; i < changeOptions.length; i++) {
+            var opt = changeOptions[i];
+            // draw box
+            doc.rect(checkboxX, checkboxY - 9, boxSize, boxSize);
+            if (opt === changeType) {
+                // draw an X inside the box for checked state
+                doc.setFontSize(12);
+                doc.text('X', checkboxX + 2, checkboxY - 1);
+                doc.setFontSize(11);
+            }
+            // draw label to the right of the box
+            doc.text(opt, checkboxX + boxSize + 8, checkboxY);
+            checkboxY += lineHeight;
+        }
+
+        y = checkboxY + 4;
+        doc.setFont('helvetica', 'bold');
+        doc.text('Request Details:', margin, y);
+
+        y += 14;
+        doc.setFont('helvetica', 'normal');
+        // Ensure details are split to the available width and rendered as multiline
+        var detailsMaxWidth = maxLineWidth - 16;
+        var detailsLines = doc.splitTextToSize(changeDetails || '(No details provided)', detailsMaxWidth);
+        for (var j = 0; j < detailsLines.length; j++) {
+            doc.text(detailsLines[j], margin + 8, y);
+            y += 14;
+        }
+        y += 8;
+
+        doc.setFontSize(10);
+        doc.setTextColor(110);
+        doc.text('This form is a request only. IT staff will review the details and contact you to schedule next steps.', margin, y);
+
+        var pdfDataUri = doc.output('datauristring');
+        var base64Pdf = pdfDataUri.split('base64,')[1];
+        var filename = 'change_request_' + assignmentId + '_' + Math.floor(Date.now() / 1000) + '.pdf';
+
+        fetch('api_change_request_form.php', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                assignment_id: assignmentId,
+                change_type: changeType,
+                change_details: changeDetails,
+                pdf_base64: base64Pdf,
+                pdf_filename: filename
+            })
+        })
+        .then(function(response) {
+            return response.text().then(function(text) {
+                var data;
+                try {
+                    data = text ? JSON.parse(text) : {};
+                } catch (parseError) {
+                    throw new Error('Invalid server response: ' + text);
+                }
+                if (!response.ok) {
+                    throw new Error(data.message || 'Server error: ' + response.status);
+                }
+                return data;
+            });
+        })
+        .then(function(data) {
+            if (data.success) {
+                alert('Your change request form has been submitted successfully. IT staff will contact you to review your request.');
+                window.location = 'view_device.php?id=' + encodeURIComponent(deviceId);
+            } else {
+                alert(data.message || 'Unable to submit your change request at this time. Please try again later.');
+            }
+        })
+        .catch(function(error) {
+            console.error('Change request submission error:', error);
+            alert('An error occurred while sending your request: ' + error.message);
+        });
+    });
+})();
+</script>
 
 <?php require_once 'includes/footer.php'; ?>

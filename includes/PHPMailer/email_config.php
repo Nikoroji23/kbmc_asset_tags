@@ -58,7 +58,7 @@ $email_settings = [
 /**
  * Send email using PHPMailer
  */
-function sendEmail($to, $subject, $body, $html = true) {
+function sendEmail($to, $subject, $body, $html = true, $attachments = []) {
     global $email_settings;
 
     // Check if email is configured
@@ -105,6 +105,16 @@ function sendEmail($to, $subject, $body, $html = true) {
         $mail->Subject = '[KBMC] ' . $subject;
         $mail->Body    = $body;
         $mail->AltBody = strip_tags($body);
+
+        if (is_array($attachments)) {
+            foreach ($attachments as $attachment) {
+                if (is_array($attachment) && !empty($attachment['path'])) {
+                    $mail->addAttachment($attachment['path'], $attachment['name'] ?? '');
+                } elseif (is_string($attachment) && file_exists($attachment)) {
+                    $mail->addAttachment($attachment);
+                }
+            }
+        }
 
         $mail->send();
 

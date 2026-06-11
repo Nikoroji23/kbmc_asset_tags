@@ -12,7 +12,10 @@
  * * Request Format (JSON):
  * {
  * "assignment_id": 123,              // Required: Device assignment ID
- * "change_reason": "..."             // Optional: Why employee is requesting a change
+ * "change_type": "Hardware",        // Required: Type of requested change
+ * "change_details": "...",          // Required: Detailed explanation of the change request
+ * "pdf_base64": "...",              // Optional: Base64-encoded PDF of the request form
+ * "pdf_filename": "change_request_123.pdf" // Optional: Suggested PDF filename
  * }
  * * Response Format (JSON):
  * Success (200):
@@ -46,9 +49,9 @@
  * - Employee can only request changes for their own assigned devices
  * - Validates device assignment is active
  * * Database Impact:
- * - No direct modifications to device_assignments
+ * - Updates device_assignments with change request metadata
  * - Creates entries in: notifications, audit_logs
- * - Updates: none (device_assignments status changes via IT Clearance/Review process)
+ * - Updates: device_assignments (change request metadata)
  * * Related Files:
  * - user_asset_dashboard.php - UI with change request form button
  * - includes/functions.php - notifyITStaff(), logAudit()
@@ -58,6 +61,8 @@
 
 require_once 'includes/config.php';
 require_once 'includes/functions.php';
+
+ensureChangeRequestSchema();
 
 // Set JSON header
 header('Content-Type: application/json');
@@ -69,8 +74,21 @@ if (!isLoggedIn()) {
     exit();
 }
 
-// Get JSON payload
-$input = json_decode(file_get_contents('php://input'), true);
+// Parse request payload from JSON or POST form data
+$contentType = $_SERVER['CONTENT_TYPE'] ?? '';
+$rawInput = file_get_contents('php://input');
+$input = [];
+
+if (stripos($contentType, 'application/json') !== false) {
+    $input = json_decode($rawInput, true);
+    if (!is_array($input)) {
+        $input = [];
+    }
+}
+
+if (empty($input) && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    $input = $_POST;
+}
 
 if (!isset($input['assignment_id'])) {
     http_response_code(400);
@@ -79,8 +97,21 @@ if (!isset($input['assignment_id'])) {
 }
 
 $assignmentId = (int)$input['assignment_id'];
-$changeReason = $input['change_reason'] ?? $input['return_reason'] ?? ''; // Accept both for backward compatibility with frontend JS templates
+$changeType    = trim($input['change_type'] ?? '');
+$changeDetails = trim($input['change_details'] ?? $input['change_reason'] ?? '');
 $userId = $_SESSION['user_id'];
+
+if ($changeType === '') {
+    http_response_code(400);
+    echo json_encode(['success' => false, 'message' => 'Please select the type of change request.']);
+    exit();
+}
+
+if ($changeDetails === '') {
+    http_response_code(400);
+    echo json_encode(['success' => false, 'message' => 'Please describe the requested change.']);
+    exit();
+}
 
 try {
     // Get assignment details with all required fields for notifications
@@ -108,11 +139,57 @@ try {
         exit();
     }
     
-    // Create notification for IT staff
+    // Create notification for IT staff (concise message for email)
     $title = 'Device Change Requested';
-    $message = "{$assignment['employee_name']} ({$assignment['asset_tag']} - {$assignment['type_name']}) has submitted a change request form.";
-    if ($changeReason) {
-        $message .= " Reason: {$changeReason}";
+    $message = "Change request for {$assignment['asset_tag']} by {$assignment['employee_name']}. Review required.";
+
+    $emailAttachments = [];
+    if (!empty($input['pdf_base64'])) {
+        $pdfBase64 = $input['pdf_base64'];
+        if (strpos($pdfBase64, 'base64,') !== false) {
+            $pdfBase64 = substr($pdfBase64, strpos($pdfBase64, 'base64,') + 7);
+        }
+
+        $pdfData = base64_decode($pdfBase64);
+        if ($pdfData === false || strlen($pdfData) === 0) {
+            throw new Exception('Unable to decode submitted PDF data');
+        }
+
+        $uploadDir = __DIR__ . '/assets/uploads/change_requests';
+        if (!is_dir($uploadDir) && !mkdir($uploadDir, 0755, true) && !is_dir($uploadDir)) {
+            throw new Exception('Unable to create upload directory for change request PDFs');
+        }
+
+        $requestedFilename = basename(trim($input['pdf_filename'] ?? "change_request_{$assignmentId}_" . time() . '.pdf'));
+        $safeFilename = preg_replace('/[^a-zA-Z0-9_.-]/', '_', $requestedFilename);
+        if (strtolower(pathinfo($safeFilename, PATHINFO_EXTENSION)) !== 'pdf') {
+            $safeFilename .= '.pdf';
+        }
+
+        $pdfPath = $uploadDir . '/' . $safeFilename;
+        if (file_put_contents($pdfPath, $pdfData) === false) {
+            throw new Exception('Unable to save change request PDF to disk');
+        }
+
+        $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https://' : 'http://';
+        $baseUrl = rtrim(dirname($_SERVER['PHP_SELF']), '/\\');
+        $pdfUrl = $protocol . $_SERVER['HTTP_HOST'] . $baseUrl . '/assets/uploads/change_requests/' . rawurlencode($safeFilename);
+        // Save PDF to disk (do not append URL to the email message)
+        // Do not attach the PDF file to IT notification emails.
+    }
+
+    // Persist the incoming request details so IT can load the form with the original request values.
+    if (columnExists('device_assignments', 'change_request_type') && columnExists('device_assignments', 'change_request_details')) {
+        $pdo->prepare(
+            "UPDATE device_assignments SET change_request_type = ?, change_request_details = ?, change_request_pdf_url = ?, change_request_submitted_at = NOW() WHERE id = ?"
+        )->execute([
+            $changeType,
+            $changeDetails,
+            $pdfUrl ?? null,
+            $assignmentId
+        ]);
+    } else {
+        error_log('[api_change_request_form] change_request columns missing, skipping persistence.');
     }
 
     $itNotificationResult = notifyITStaff(
@@ -126,8 +203,8 @@ try {
     addNotificationIfNotExists(
         $userId,
         'change_request_submitted',
-        'Change Request Form Submitted',
-        "Your change request for {$assignment['asset_tag']} ({$assignment['type_name']}) has been submitted. IT staff will contact you to arrange clearance and pickup.",
+        'Change Request Submitted',
+        "Change request for {$assignment['asset_tag']} submitted. IT will follow up.",
         $assignment['device_id']
     );
     
@@ -137,7 +214,7 @@ try {
         'DEVICE_CHANGE_REQUESTED',
         'device_assignments',
         $assignmentId,
-        "Change request form submitted for device: {$assignment['asset_tag']} ({$assignment['type_name']})" . ($changeReason ? ". Reason: {$changeReason}" : '')
+        "Change request submitted for device: {$assignment['asset_tag']} ({$assignment['type_name']}). Type: {$changeType}. Details: {$changeDetails}"
     );
     
     // Log device change event
@@ -149,13 +226,19 @@ try {
         "Device change pipeline initiated by employee {$assignment['employee_name']}. Asset Tag: {$assignment['asset_tag']}"
     );
     
-    echo json_encode([
+    $response = [
         'success' => true,
-        'message' => 'Your change request form has been sent to IT. IT staff will contact you soon.',
+        'message' => 'Change request sent. IT will follow up shortly.',
         'assignment_id' => $assignmentId,
         'device_asset_tag' => $assignment['asset_tag'],
         'notification_sent' => true
-    ]);
+    ];
+
+    if (!empty($pdfUrl)) {
+        $response['pdf_url'] = $pdfUrl;
+    }
+
+    echo json_encode($response);
     
 } catch (Exception $e) {
     error_log("Error in api_change_request_form.php: " . $e->getMessage());

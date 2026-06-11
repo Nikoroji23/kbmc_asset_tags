@@ -12,6 +12,7 @@
 
 $pageTitle = 'IT User Clearance';
 require_once 'includes/functions.php';
+ensureChangeRequestSchema();
 requireITStaff();
 
 $successMessage = '';
@@ -34,7 +35,7 @@ $isSingleMode     = $preselectedDevId > 0;
 $modeLabel        = $isSingleMode ? 'Single-Device Clearance' : 'IT User Clearance';
 $isDone           = isset($_GET['done']) && $_GET['done'] == '1';
 /* ─── dynamic sequential control number generator ───────────────────────── */
-$baseSequence = 29;
+$baseSequence = 0;
 $countPastAssignments = 0;
 try {
     $countStmt = $pdo->query("SELECT COUNT(DISTINCT employee_id) FROM device_assignments WHERE status = 'returned'");
@@ -43,7 +44,7 @@ try {
     $countPastAssignments = 0;
 }
 
-$currentSequenceValue = $baseSequence;
+$currentSequenceValue = $countPastAssignments;
 
 /* ─── POST: process clearance ───────────────────────────────────────────── */
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'process_clearance') {
@@ -297,6 +298,53 @@ if (!empty($assignedDevices)) {
 }
 $totalFormDevices = count($formDevices);
 
+$changeRequest = null;
+$changeRequestType = '';
+$changeRequestDetails = '';
+$changeRequestSubmittedAt = '';
+
+if (columnExists('device_assignments', 'change_request_type') && columnExists('device_assignments', 'change_request_details')) {
+    if ($preselectedAssignmentId > 0) {
+        $stmt = $pdo->prepare(
+            "SELECT change_request_type, change_request_details, change_request_pdf_url, change_request_submitted_at
+             FROM device_assignments
+             WHERE id = ? LIMIT 1"
+        );
+        $stmt->execute([$preselectedAssignmentId]);
+        $changeRequest = $stmt->fetch(PDO::FETCH_ASSOC);
+    }
+
+    if (empty($changeRequest) && $selectedUserId > 0) {
+        $stmt = $pdo->prepare(
+            "SELECT change_request_type, change_request_details, change_request_pdf_url, change_request_submitted_at
+             FROM device_assignments
+             WHERE employee_id = ? AND change_request_type IS NOT NULL
+             ORDER BY change_request_submitted_at DESC LIMIT 1"
+        );
+        $stmt->execute([$selectedUserId]);
+        $changeRequest = $stmt->fetch(PDO::FETCH_ASSOC);
+    }
+
+    if (empty($changeRequest) && $preselectedDevId > 0) {
+        $stmt = $pdo->prepare(
+            "SELECT change_request_type, change_request_details, change_request_pdf_url, change_request_submitted_at
+             FROM device_assignments
+             WHERE device_id = ? AND change_request_type IS NOT NULL
+             ORDER BY change_request_submitted_at DESC LIMIT 1"
+        );
+        $stmt->execute([$preselectedDevId]);
+        $changeRequest = $stmt->fetch(PDO::FETCH_ASSOC);
+    }
+} else {
+    error_log('[it_clearance] change_request columns missing, not loading request metadata.');
+}
+
+if (!empty($changeRequest)) {
+    $changeRequestType = $changeRequest['change_request_type'] ?? '';
+    $changeRequestDetails = $changeRequest['change_request_details'] ?? '';
+    $changeRequestSubmittedAt = $changeRequest['change_request_submitted_at'] ?? '';
+}
+
 $checklistGroups = [
     'Physical' => [
         'no_physical_damage'    => 'No physical damage (cracks, dents, scratches)',
@@ -430,6 +478,14 @@ if (!empty($_SESSION['last_clearance_processed']) && isset($_GET['done']) && $_G
 $printDevices = $lastClear ? $lastClear['devices'] : (!empty($formDevices) ? $formDevices : $assignedDevices);
 $printUser = $lastClear ? $lastClear['user'] : $selectedUser;
 $displayControlNumber = $lastClear ? $lastClear['control_no'] : 'IT-26-' . str_pad($currentSequenceValue, 4, '0', STR_PAD_LEFT);
+
+$changeRequestDisplayDate = $changeRequestSubmittedAt ? date('Y-m-d', strtotime($changeRequestSubmittedAt)) : date('Y-m-d');
+
+function renderChangeTypeCheckbox($label) {
+    global $changeRequestType;
+    $checked = ($changeRequestType === $label) ? '☑' : '☐';
+    return '<div class="cr-cb-item"><div class="cr-box">' . $checked . '</div>' . htmlspecialchars($label) . '</div>';
+}
 ?>
 
 <div class="printable-clearance">
@@ -480,7 +536,7 @@ $displayControlNumber = $lastClear ? $lastClear['control_no'] : 'IT-26-' . str_p
     <div style="border:1px solid #000; min-height:50px; padding:6px; font-size:11px; margin-bottom:15px; white-space:pre-wrap;"><?php echo htmlspecialchars($lastClear['notes'] ?? ($_POST['clearance_notes'] ?? '')); ?></div>
 
     <div style="font-size:11px; text-align:justify; margin-bottom:30px; line-height:1.4;">
-        I, <strong><u><?php echo sanitize($printUser['full_name'] ?? '____________________________'); ?></u></strong>, hereby acknowledge that I have returned all property/property checked above in good condition for return. Nevertheless, through IT inspection, any problems/issues found, the user can be held accountable and endorsed to the HR Department.
+        I, <strong><u><?php echo sanitize($printUser['full_name'] ?? '____________________________'); ?></u></strong>, confirm that all listed items have been returned in good condition. Any issues found during IT inspection will be handled according to policy.
     </div>
 
     <div class="cr-sig-grid" style="margin-bottom: 30px;">
@@ -552,7 +608,7 @@ $displayControlNumber = $lastClear ? $lastClear['control_no'] : 'IT-26-' . str_p
             <td class="bg-gray">E-mail Address:</td>
             <td><?php echo sanitize($printUser['email'] ?? strtolower(str_replace(' ', '', $printUser['full_name'] ?? '')).'@kbmc.com.ph'); ?></td>
             <td class="bg-gray">Date of Request:</td>
-            <td><?php echo date('Y-m-d'); ?></td>
+            <td><?php echo htmlspecialchars($changeRequestDisplayDate); ?></td>
         </tr>
     </table>
 
@@ -560,34 +616,30 @@ $displayControlNumber = $lastClear ? $lastClear['control_no'] : 'IT-26-' . str_p
     <div style="font-weight: bold; font-size:11px; margin-bottom: 5px;">1.1 Type of Change: <span style="font-weight: normal; font-style: italic;">Please select one (1)</span></div>
     
     <div class="cr-cb-grid">
-        <div class="cr-cb-item"><div class="cr-box">☑</div> Hardware</div>
-        <div class="cr-cb-item"><div class="cr-box">☐</div> Application / Software</div>
-        <div class="cr-cb-item"><div class="cr-box">☐</div> Email</div>
-        <div class="cr-cb-item"><div class="cr-box">☐</div> Network</div>
-        <div class="cr-cb-item"><div class="cr-box">☐</div> Operating System</div>
+        <?php echo renderChangeTypeCheckbox('Hardware'); ?>
+        <?php echo renderChangeTypeCheckbox('Application / Software'); ?>
+        <?php echo renderChangeTypeCheckbox('Email'); ?>
+        <?php echo renderChangeTypeCheckbox('Network'); ?>
+        <?php echo renderChangeTypeCheckbox('Operating System'); ?>
     </div>
 
     <div style="font-weight: bold; font-size:11px; margin-top:15px; margin-bottom: 5px;">Please specify the data/setup changes:</div>
-    <div class="cr-textbox">
-<strong>[System Asset De-assignment Log]</strong>
+    <div class="cr-textbox" style="white-space: pre-wrap;">
 <?php 
-if(!empty($printDevices)){
-    foreach($printDevices as $d){
-        echo "Release/Return Property Asset: " . htmlspecialchars($d['asset_tag']) . " - " . htmlspecialchars($d['type_name']) . "\n";
-    }
+if ($changeRequestDetails) {
+    echo htmlspecialchars($changeRequestDetails) . "\n";
 }
 ?>
-Remarks/Reason: <?php echo htmlspecialchars($lastClear['notes'] ?? ($_POST['clearance_notes'] ?? 'Employee Offboarding Account Processing Status Action.')); ?>
     </div>
     <div style="font-size: 10px; font-style: italic; margin-bottom: 25px;">Note: Provide supporting documents/references (if applicable)</div>
 
     <div class="cr-sig-grid" style="margin-top: 40px;">
         <div>
-            <div class="cr-sig-line"></div>
+            <div class="cr-sig-line" style="max-width: 75%;"></div>
             <div class="cr-sig-label">Requestor Signature</div>
         </div>
         <div>
-            <div class="cr-sig-line"></div>
+            <div class="cr-sig-line" style="max-width: 45%;"></div>
             <div class="cr-sig-label">Date Signed</div>
         </div>
     </div>
@@ -608,28 +660,22 @@ Remarks/Reason: <?php echo htmlspecialchars($lastClear['notes'] ?? ($_POST['clea
 
         <table class="pc-meta-table" style="margin-top: 20px;">
             <tr>
-                <td class="bg-gray" style="width: 20px; height: 35px;">Evaluated By:</td>
-                <td style="width: 40px;"></td>
-                <td class="bg-gray" style="width: 10px;">Date:</td>
-                <td style="width: 30px;"></td>
+                <td class="bg-gray" style="width: 50%; height: 45px; vertical-align: top; padding: 6px;">Evaluated By:</td>
+                <td class="bg-gray" style="width: 50%; height: 45px; vertical-align: top; padding: 6px;">Date:</td>
             </tr>
             <tr>
-                <td class="bg-gray" style="height: 35px;">Approved By:</td>
-                <td></td>
-                <td class="bg-gray">Date:</td>
-                <td></td>
+                <td class="bg-gray" style="width: 50%; height: 45px; vertical-align: top; padding: 6px;">Approved By:</td>
+                <td class="bg-gray" style="width: 50%; height: 45px; vertical-align: top; padding: 6px;">Date:</td>
             </tr>
         </table>
 
         <div style="font-weight: bold; font-size:11px; margin-top:15px; margin-bottom: 5px;">Approver Remarks:</div>
         <div class="cr-textbox" style="min-height: 100px;"></div>
 
-        <table class="pc-meta-table">
+        <table class="pc-meta-table" style="margin-top: 20px;">
             <tr>
-                <td class="bg-gray" style="width: 25%; height: 35px;">Task Assigned To:</td>
-                <td style="width: 35%;"></td>
-                <td class="bg-gray" style="width: 20%;">Date of Deployment:</td>
-                <td style="width: 20%;"></td>
+                <td class="bg-gray" style="width: 50%; height: 45px; vertical-align: top; padding: 6px;">Task Assigned To:</td>
+                <td class="bg-gray" style="width: 50%; height: 45px; vertical-align: top; padding: 6px;">Date of Deployment:</td>
             </tr>
         </table>
     </div>
