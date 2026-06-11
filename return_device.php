@@ -1,6 +1,6 @@
 <?php
 /**
- * KBMC Asset Management - View Device Details
+ * KBMC Asset Management - View Device Details & Change Request Form Handler
  */
 
 $pageTitle = 'Device Details';
@@ -21,7 +21,7 @@ $assignmentStmt->execute([$assignmentId]);
 $currentAssignment = $assignmentStmt->fetch(PDO::FETCH_ASSOC);
 
 if (!$currentAssignment) {
-    setFlashMessage('error', 'Invalid return request or active assignment not found.');
+    setFlashMessage('error', 'Invalid request or active assignment not found.');
     header('Location: devices.php');
     exit();
 }
@@ -64,37 +64,41 @@ $stmt = $pdo->prepare(
 $stmt->execute([$device['id']]);
 $repairs = $stmt->fetchAll();
 
-// DEBUG: Log the voluntary return attempt
-error_log("[VOLUNTARY_RETURN_DEBUG] Checking conditions...");
-error_log("[VOLUNTARY_RETURN_DEBUG] mode=" . (isset($_GET['mode']) ? $_GET['mode'] : 'NOT SET'));
-error_log("[VOLUNTARY_RETURN_DEBUG] currentAssignment exists: " . ($currentAssignment ? 'YES' : 'NO'));
-error_log("[VOLUNTARY_RETURN_DEBUG] isEmployee: " . (hasRole('employee') ? 'YES' : 'NO'));
-error_log("[VOLUNTARY_RETURN_DEBUG] session user_id: " . (isset($_SESSION['user_id']) ? $_SESSION['user_id'] : 'NOT SET'));
-error_log("[VOLUNTARY_RETURN_DEBUG] assignment employee_id: " . ($currentAssignment ? $currentAssignment['employee_id'] : 'N/A'));
+// DEBUG: Log the change request submission attempt
+error_log("[CHANGE_REQUEST_DEBUG] Checking conditions...");
+error_log("[CHANGE_REQUEST_DEBUG] mode=" . (isset($_GET['mode']) ? $_GET['mode'] : 'NOT SET'));
+error_log("[CHANGE_REQUEST_DEBUG] currentAssignment exists: " . ($currentAssignment ? 'YES' : 'NO'));
+error_log("[CHANGE_REQUEST_DEBUG] isEmployee: " . (hasRole('employee') ? 'YES' : 'NO'));
+error_log("[CHANGE_REQUEST_DEBUG] session user_id: " . (isset($_SESSION['user_id']) ? $_SESSION['user_id'] : 'NOT SET'));
+error_log("[CHANGE_REQUEST_DEBUG] assignment employee_id: " . ($currentAssignment ? $currentAssignment['employee_id'] : 'N/A'));
 if ($currentAssignment && isset($_SESSION['user_id'])) {
-    error_log("[VOLUNTARY_RETURN_DEBUG] IDs match: " . ((int)$_SESSION['user_id'] === (int)$currentAssignment['employee_id'] ? 'YES' : 'NO'));
+    error_log("[CHANGE_REQUEST_DEBUG] IDs match: " . ((int)$_SESSION['user_id'] === (int)$currentAssignment['employee_id'] ? 'YES' : 'NO'));
 }
 
 if (isset($_GET['mode']) && $_GET['mode'] === 'voluntary' && $currentAssignment && hasRole('employee') && isset($_SESSION['user_id']) && (int)$_SESSION['user_id'] === (int)$currentAssignment['employee_id']) {
-    error_log("[VOLUNTARY_RETURN] ✓ ALL CONDITIONS MET - Creating notification");
-    $returnUrl = 'view_device.php?id=' . urlencode($device['id']);
-    $title = 'Voluntary Return Requested';
-    $message = "Employee {$currentAssignment['employee_name']} requested voluntary return for device {$device['asset_tag']}. Please review user clearance.";
-
-    error_log("[VOLUNTARY_RETURN] Calling notifyITStaff with assignment_id=" . $currentAssignment['id']);
-    notifyITStaff('user_clearance_required', $title, $message, $currentAssignment['id']);
-    error_log("[VOLUNTARY_RETURN] notifyITStaff completed");
+    error_log("[CHANGE_REQUEST] ✓ ALL CONDITIONS MET - Creating notification");
+    $returnUrl = 'return_device.php?id=' . urlencode($currentAssignment['id']);
     
+    // Updated system title and administrative activity feed alert logs
+    $title = 'Device Change Requested';
+    $message = "Employee {$currentAssignment['employee_name']} submitted a change request form for device {$device['asset_tag']}. Please review user clearance.";
+
+    error_log("[CHANGE_REQUEST] Calling notifyITStaff with assignment_id=" . $currentAssignment['id']);
+    notifyITStaff('user_clearance_required', $title, $message, $currentAssignment['id']);
+    error_log("[CHANGE_REQUEST] notifyITStaff completed");
+    
+    // Updated notification summary line for the employee profile menu
     addNotificationIfNotExists(
         $_SESSION['user_id'],
         'voluntary_return_requested',
-        'Voluntary Return Requested',
-        "Your voluntary return request for {$device['asset_tag']} has been sent to IT for clearance.",
+        'Change Request Form Submitted',
+        "Your change request for {$device['asset_tag']} has been sent to IT for clearance.",
         $device['id']
     );
-    error_log("[VOLUNTARY_RETURN] addNotificationIfNotExists completed");
+    error_log("[CHANGE_REQUEST] addNotificationIfNotExists completed");
 
-    setFlashMessage('success', 'Your voluntary return request has been sent to IT. Please complete clearance when IT contacts you.');
+    // Success Flash Notification Message shown in green alert container box
+    setFlashMessage('success', 'Your change request form has been sent to IT. IT staff will contact you soon.');
     redirect($returnUrl);
 }
 ?>
@@ -111,7 +115,6 @@ if (isset($_GET['mode']) && $_GET['mode'] === 'voluntary' && $currentAssignment 
 
 <div class="grid-2">
 
-    <!-- ══ Device Info ══════════════════════════════════════════════ -->
     <div class="card">
         <div class="card-header">
             <h3><i class="fas fa-info-circle"></i> Device Information</h3>
@@ -140,7 +143,7 @@ if (isset($_GET['mode']) && $_GET['mode'] === 'voluntary' && $currentAssignment 
             <hr style="margin: 15px 0; border: none; border-top: 1px solid #eee;">
             <div>
                 <strong style="color: #666; font-size: 12px;">Specifications</strong><br>
-                <p><?php echo nl2br(sanitize($device['specifications'])); ?></p>
+                <p><?php echo nl2br(sanitize($device['specifications'] ?? '')); ?></p>
             </div>
             <?php if ($device['condition_notes']): ?>
             <div style="margin-top: 10px;">
@@ -151,7 +154,6 @@ if (isset($_GET['mode']) && $_GET['mode'] === 'voluntary' && $currentAssignment 
         </div>
     </div>
 
-    <!-- ══ Current Assignment ════════════════════════════════════════ -->
     <div class="card">
         <div class="card-header">
             <h3><i class="fas fa-user-check"></i> Current Assignment</h3>
@@ -183,10 +185,8 @@ if (isset($_GET['mode']) && $_GET['mode'] === 'voluntary' && $currentAssignment 
                     </span>
                 </p>
 
-                <!-- ── Return Buttons ── -->
                 <div style="display:flex;justify-content:center;flex-wrap:wrap;gap:10px;margin-top:18px;">
                     <?php if (hasRole('admin') || hasRole('it_staff')): ?>
-                    <!-- IT-initiated return (full form) -->
                     <a href="return_device.php?id=<?php echo $currentAssignment['id']; ?>"
                        class="btn btn-warning btn-sm"
                        style="display:inline-flex;align-items:center;gap:6px;">
@@ -195,27 +195,26 @@ if (isset($_GET['mode']) && $_GET['mode'] === 'voluntary' && $currentAssignment 
                     <?php endif; ?>
 
                     <?php
-                    // Allow the assigned employee themselves to request a voluntary return
+                    // Check if self-assigned worker matches active profile context session
                     $isAssignedEmployee = (
                         hasRole('employee') &&
                         isset($_SESSION['user_id']) &&
                         (int)$_SESSION['user_id'] === (int)$currentAssignment['employee_id']
                     );
                     if ($isAssignedEmployee): ?>
-                    <a href="return_device.php?id=<?php echo $currentAssignment['id']; ?>"
+                    <a href="return_device.php?id=<?php echo $currentAssignment['id']; ?>&mode=voluntary"
                        class="btn btn-outline btn-sm"
                        style="display:inline-flex;align-items:center;gap:6px;border-color:#E67E22;color:#E67E22;">
-                        <i class="fas fa-hand-holding"></i> Voluntarily Return
+                        <i class="fas fa-exchange-alt"></i> Change Request Form
                     </a>
                     <?php endif; ?>
                 </div>
 
-                <!-- ── Voluntary return info strip (visible to employee) ── -->
                 <?php if ($isAssignedEmployee ?? false): ?>
                 <div style="margin-top:14px;background:#FEF9E7;border:1px solid #F39C1240;border-radius:6px;padding:10px 14px;font-size:12px;color:#7D6608;text-align:left;">
                     <i class="fas fa-info-circle"></i>
-                    Clicking <strong>"Voluntarily Return"</strong> will open a return form where IT staff will check
-                    the device condition and log the return. You will need to be present during the inspection.
+                    Clicking <strong>"Change Request Form"</strong> will open a change request form where IT staff will check
+                    the device condition and log the details. You will need to be present during the inspection.
                 </div>
                 <?php endif; ?>
             </div>
@@ -236,10 +235,7 @@ if (isset($_GET['mode']) && $_GET['mode'] === 'voluntary' && $currentAssignment 
         </div>
     </div>
 
-</div><!-- /.grid-2 -->
-
-<!-- ══ Inspection History ═══════════════════════════════════════════ -->
-<div class="card">
+</div><div class="card">
     <div class="card-header">
         <h3><i class="fas fa-clipboard-check"></i> Inspection History</h3>
         <?php if (hasRole('admin') || hasRole('it_staff')): ?>
@@ -285,7 +281,6 @@ if (isset($_GET['mode']) && $_GET['mode'] === 'voluntary' && $currentAssignment 
     </div>
 </div>
 
-<!-- ══ Repair History ════════════════════════════════════════════════ -->
 <div class="card">
     <div class="card-header">
         <h3><i class="fas fa-tools"></i> Repair History</h3>

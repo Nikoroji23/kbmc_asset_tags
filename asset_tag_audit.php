@@ -71,7 +71,7 @@ $sql = "SELECT * FROM (
         da.device_id,
         NULL as old_values,
         JSON_OBJECT('status', da.status) as new_values,
-        da.assigned_date as created_at,
+        da.created_at as created_at,
         u.full_name as staff_name,
         u.employee_id as staff_emp_id,
         d.asset_tag,

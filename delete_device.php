@@ -1,13 +1,11 @@
 <?php
 /**
- * KBMC Asset Management - Delete Device (IMPROVED)
- * Marks device as disposed and records who disposed it
- * With better error handling, transaction support, and logging
+ * KBMC Asset Management - Delete Device (FIXED)
+ * Marks device as disposed and breaks the active user assignment link
  */
 require_once 'includes/functions.php';
 requireITStaff();
 
-// Ensure disposal tracking columns exist
 ensureDeviceSchema();
 
 $id = (int)($_GET['id'] ?? 0);
@@ -43,10 +41,20 @@ try {
     $currentUserName = $currentUser['full_name'];
     $currentUserEmail = $currentUser['email'];
     
-    // Start transaction for data consistency
+    // START TRANSACTION
     $pdo->beginTransaction();
+
+    // STEP 1: FORCE-TERMINATE THE ACTIVE ASSIGNMENT
+    // This removes the device from the user's active profile view!
+    $updateAssignmentStmt = $pdo->prepare("
+        UPDATE device_assignments 
+        SET status = 'returned', 
+            returned_date = CURDATE() 
+        WHERE device_id = ? AND status = 'active'
+    ");
+    $updateAssignmentStmt->execute([$id]);
     
-    // Update device status to 'disposed'
+    // STEP 2: Update device status to 'disposed'
     $updateStmt = $pdo->prepare("
         UPDATE devices 
         SET status = 'disposed', 
@@ -61,7 +69,7 @@ try {
     
     $rowsAffected = $updateStmt->rowCount();
     if ($rowsAffected === 0) {
-        throw new Exception("No rows were updated. Device may not exist or ID mismatch.");
+        throw new Exception("No rows were updated. Device may not exist or ID mismatch");
     }
     
     // Verify the update was successful
@@ -79,11 +87,7 @@ try {
         throw new Exception("Status verification failed. Expected 'disposed', got '" . $verifiedDevice['status'] . "'");
     }
     
-    if ($verifiedDevice['disposed_by'] != $currentUserId) {
-        throw new Exception("Disposed_by value mismatch");
-    }
-    
-    // Commit transaction
+    // Commit transaction cleanly
     $pdo->commit();
     
     // Log the disposal
@@ -104,19 +108,18 @@ try {
     $notificationMessage = "Device " . $device['asset_tag'] . " has been marked as disposed by " . $currentUserName . ".";
     notifyITStaff('device_disposed', $notificationTitle, $notificationMessage, $id);
     
-    setFlashMessage('success', 'Device ' . $device['asset_tag'] . ' (ID: ' . $id . ') has been successfully marked as disposed and moved to the Retired/Disposed section.');
+    setFlashMessage('success', 'Device ' . $device['asset_tag'] . ' has been successfully moved to Retired/Disposed.');
     
 } catch (Exception $e) {
-    // Rollback transaction on error
     try {
         $pdo->rollBack();
     } catch (Exception $rbErr) {
         // Transaction might not be active
     }
-    
     error_log("Device disposal error for ID $id: " . $e->getMessage());
     setFlashMessage('error', 'Failed to dispose device: ' . $e->getMessage());
 }
 
 header('Location: devices.php');
 exit();
+?>

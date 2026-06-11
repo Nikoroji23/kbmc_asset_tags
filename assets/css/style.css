@@ -522,6 +522,7 @@ body {
 .btn {
     display: inline-flex;
     align-items: center;
+    justify-content: center;
     gap: 8px;
     padding: 10px 18px;
     border-radius: var(--radius);
@@ -532,9 +533,10 @@ body {
     text-decoration: none;
     transition: var(--transition);
     white-space: nowrap;
+    text-align: center;
 }
 
-.btn-sm { padding: 6px 12px; font-size: 12px; }
+.btn-sm { padding: 6px 12px; font-size: 12px; gap: 6px; display: inline-flex; justify-content: center; align-items: center; text-align: center; min-width: 84px; }
 .btn-lg { padding: 14px 24px; font-size: 14px; }
 
 .btn-primary { background: var(--kbmc-red); color: white; }

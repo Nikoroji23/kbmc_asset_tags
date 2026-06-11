@@ -20,7 +20,7 @@ $userEmail = $_SESSION['email'];
 $assignedDevices = getEmployeeAssignedDevices($userId);
 $stats = getEmployeeDeviceStats($userId);
 
-// Get current active assignments for voluntary return buttons
+// Get current active assignments for change request form buttons
 $activeAssignments = [];
 if (!empty($assignedDevices)) {
     $placeholders = implode(',', array_fill(0, count($assignedDevices), '?'));
@@ -36,7 +36,7 @@ $search = $_GET['search'] ?? '';
 
 <style>
 /* Modal Override - Force Full Viewport Coverage */
-#reportIssueModal, #voluntaryReturnModal {
+#reportIssueModal, #changeRequestModal {
     position: fixed !important;
     top: 0 !important;
     left: 0 !important;
@@ -261,13 +261,13 @@ $search = $_GET['search'] ?? '';
     color: white;
 }
 
-.action-btn.return {
-    background: #fadbd8;
-    color: #e74c3c;
+.action-btn.change-request {
+    background: #eaf2f8;
+    color: #2980b9;
 }
 
-.action-btn.return:hover {
-    background: #e74c3c;
+.action-btn.change-request:hover {
+    background: #2980b9;
     color: white;
 }
 
@@ -353,7 +353,6 @@ $search = $_GET['search'] ?? '';
 }
 </style>
 
-<!-- Quick Stats -->
 <div class="stats-grid">
     <div class="stat-box">
         <div class="stat-value"><?php echo $stats['total_devices'] ?? 0; ?></div>
@@ -373,7 +372,6 @@ $search = $_GET['search'] ?? '';
     </div>
 </div>
 
-<!-- Devices Table -->
 <div class="card">
     <div class="card-header">
         <h3><i class="fas fa-list"></i> Your Devices (<?php echo count($assignedDevices); ?> Total)</h3>
@@ -429,7 +427,7 @@ $search = $_GET['search'] ?? '';
                                 <a href="view_device.php?id=<?php echo $device['id']; ?>" class="action-btn view" title="View Details"><i class="fas fa-eye"></i></a>
                                 <button onclick="reportIssue(<?php echo $device['id']; ?>, '<?php echo $device['asset_tag']; ?>')" class="action-btn report" title="Report Issue"><i class="fas fa-exclamation-circle"></i></button>
                                 <?php if ($assignmentId): ?>
-                                <button onclick="voluntarilyReturnDevice(<?php echo $assignmentId; ?>, '<?php echo $device['asset_tag']; ?>')" class="action-btn return" title="Request Return"><i class="fas fa-hand-holding"></i></button>
+                                <button onclick="openChangeRequestForm(<?php echo $assignmentId; ?>, '<?php echo $device['asset_tag']; ?>')" class="action-btn change-request" title="Device Change Request Form"><i class="fas fa-exchange-alt"></i></button>
                                 <?php endif; ?>
                             </div>
                         </td>
@@ -448,10 +446,8 @@ $search = $_GET['search'] ?? '';
     </div>
 </div>
 
-<!-- Report Issue Modal - Modern Design -->
 <div id="reportIssueModal" style="display: none; position: fixed; inset: 0; background: linear-gradient(135deg, rgba(0,0,0,0.6) 0%, rgba(0,0,0,0.4) 100%); z-index: 2000; align-items: center; justify-content: center; overflow-y: auto; padding: 20px; box-sizing: border-box; animation: fadeIn 0.3s ease;">
     <div style="width: 100%; max-width: 580px; background: white; border-radius: 16px; box-shadow: 0 25px 80px rgba(0,0,0,0.3); overflow: hidden; animation: slideUp 0.3s ease;">
-        <!-- Header with gradient background -->
         <div style="background: linear-gradient(135deg, #f39c12 0%, #e67e22 100%); padding: 30px 28px; display: flex; justify-content: space-between; align-items: center;">
             <div style="display: flex; align-items: center; gap: 12px;">
                 <i class="fas fa-exclamation-circle" style="font-size: 28px; color: white;"></i>
@@ -460,24 +456,19 @@ $search = $_GET['search'] ?? '';
             <button onclick="closeReportIssue()" style="background: rgba(255,255,255,0.2); border: none; width: 40px; height: 40px; border-radius: 8px; cursor: pointer; color: white; font-size: 24px; transition: all 0.2s; display: flex; align-items: center; justify-content: center;" onmouseover="this.style.background='rgba(255,255,255,0.3)';" onmouseout="this.style.background='rgba(255,255,255,0.2)';">&times;</button>
         </div>
 
-        <!-- Form Body -->
         <div style="padding: 28px;">
             <form id="reportForm" method="POST" enctype="multipart/form-data">
-                <!-- Device Tag (Read-only) -->
                 <div style="margin-bottom: 20px;">
                     <label style="display: block; font-weight: 700; margin-bottom: 8px; color: #2c3e50; font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px;">Device</label>
                     <input type="text" id="deviceTag" readonly style="background: #f0f2f5; padding: 12px 14px; border: 2px solid #e8eaed; border-radius: 8px; width: 100%; font-size: 15px; color: #555; font-weight: 600;">
                 </div>
 
-                <!-- Issue Description -->
                 <div style="margin-bottom: 20px;">
                     <label style="display: block; font-weight: 700; margin-bottom: 8px; color: #2c3e50; font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px;">Issue Description <span style="color: #e74c3c;">*</span></label>
-                    <textarea id="issueDescription" name="issue_description" required style="width: 100%; height: 110px; padding: 12px 14px; border: 2px solid #e8eaed; border-radius: 8px; font-family: 'Segoe UI', Arial, sans-serif; font-size: 14px; resize: vertical; transition: border 0.2s;" placeholder="Describe the issue you're experiencing..." onf ocus="this.style.borderColor='#f39c12';" onblur="this.style.borderColor='#e8eaed';"></textarea>
+                    <textarea id="issueDescription" name="issue_description" required style="width: 100%; height: 110px; padding: 12px 14px; border: 2px solid #e8eaed; border-radius: 8px; font-family: 'Segoe UI', Arial, sans-serif; font-size: 14px; resize: vertical; transition: border 0.2s;" placeholder="Describe the issue you're experiencing..." onfocus="this.style.borderColor='#f39c12';" onblur="this.style.borderColor='#e8eaed';"></textarea>
                 </div>
 
-                <!-- Two column layout for Severity and Category -->
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px;">
-                    <!-- Severity Level -->
                     <div>
                         <label style="display: block; font-weight: 700; margin-bottom: 8px; color: #2c3e50; font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px;">Severity</label>
                         <select id="severity" name="severity" style="width: 100%; padding: 12px 14px; border: 2px solid #e8eaed; border-radius: 8px; font-size: 14px; background: white; cursor: pointer; transition: border 0.2s;" onfocus="this.style.borderColor='#f39c12';" onblur="this.style.borderColor='#e8eaed';">
@@ -488,7 +479,6 @@ $search = $_GET['search'] ?? '';
                         </select>
                     </div>
 
-                    <!-- Issue Category -->
                     <div>
                         <label style="display: block; font-weight: 700; margin-bottom: 8px; color: #2c3e50; font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px;">Category <span style="color: #e74c3c;">*</span></label>
                         <select id="issueCategory" name="issue_category" required style="width: 100%; padding: 12px 14px; border: 2px solid #e8eaed; border-radius: 8px; font-size: 14px; background: white; cursor: pointer; transition: border 0.2s;" onfocus="this.style.borderColor='#f39c12';" onblur="this.style.borderColor='#e8eaed';">
@@ -504,7 +494,6 @@ $search = $_GET['search'] ?? '';
                     </div>
                 </div>
 
-                <!-- Attachment -->
                 <div style="margin-bottom: 24px;">
                     <label style="display: block; font-weight: 700; margin-bottom: 8px; color: #2c3e50; font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px;">Attach Evidence</label>
                     <div style="position: relative;">
@@ -515,7 +504,6 @@ $search = $_GET['search'] ?? '';
 
                 <input type="hidden" id="deviceId" name="device_id">
 
-                <!-- Action Buttons -->
                 <div style="display: flex; gap: 12px; justify-content: flex-end; padding-top: 18px; border-top: 1px solid #ecf0f1;">
                     <button type="button" onclick="closeReportIssue()" style="padding: 12px 24px; border: 2px solid #ddd; background: white; color: #555; border-radius: 8px; font-weight: 600; cursor: pointer; transition: all 0.2s; font-size: 14px;" onmouseover="this.style.background='#f5f5f5';" onmouseout="this.style.background='white';">Cancel</button>
                     <button type="submit" style="padding: 12px 28px; background: linear-gradient(135deg, #f39c12 0%, #e67e22 100%); color: white; border: none; border-radius: 8px; font-weight: 700; cursor: pointer; transition: all 0.2s; font-size: 14px; box-shadow: 0 4px 15px rgba(243, 156, 18, 0.3);" onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 6px 20px rgba(243, 156, 18, 0.4)';" onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 4px 15px rgba(243, 156, 18, 0.3)';">✓ Report Issue</button>
@@ -523,63 +511,46 @@ $search = $_GET['search'] ?? '';
             </form>
         </div>
     </div>
-
-    <style>
-        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-        @keyframes slideUp { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
-    </style>
 </div>
 
-<!-- Voluntary Return Modal - Modern Design -->
-<div id="voluntaryReturnModal" style="display: none; position: fixed; inset: 0; background: linear-gradient(135deg, rgba(0,0,0,0.6) 0%, rgba(0,0,0,0.4) 100%); z-index: 2000; align-items: center; justify-content: center; overflow-y: auto; padding: 20px; box-sizing: border-box; animation: fadeIn 0.3s ease;">
+<div id="changeRequestModal" style="display: none; position: fixed; inset: 0; background: linear-gradient(135deg, rgba(0,0,0,0.6) 0%, rgba(0,0,0,0.4) 100%); z-index: 2000; align-items: center; justify-content: center; overflow-y: auto; padding: 20px; box-sizing: border-box; animation: fadeIn 0.3s ease;">
     <div style="width: 100%; max-width: 580px; background: white; border-radius: 16px; box-shadow: 0 25px 80px rgba(0,0,0,0.3); overflow: hidden; animation: slideUp 0.3s ease;">
-        <!-- Header with gradient background -->
-        <div style="background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%); padding: 30px 28px; display: flex; justify-content: space-between; align-items: center;">
+        <div style="background: linear-gradient(135deg, #2980b9 0%, #1f618d 100%); padding: 30px 28px; display: flex; justify-content: space-between; align-items: center;">
             <div style="display: flex; align-items: center; gap: 12px;">
-                <i class="fas fa-hand-holding" style="font-size: 28px; color: white;"></i>
-                <h2 style="margin: 0; color: white; font-size: 22px; font-weight: 700;">Request Device Return</h2>
+                <i class="fas fa-exchange-alt" style="font-size: 28px; color: white;"></i>
+                <h2 style="margin: 0; color: white; font-size: 22px; font-weight: 700;">Device Change Request Form</h2>
             </div>
-            <button onclick="closeVoluntaryReturn()" style="background: rgba(255,255,255,0.2); border: none; width: 40px; height: 40px; border-radius: 8px; cursor: pointer; color: white; font-size: 24px; transition: all 0.2s; display: flex; align-items: center; justify-content: center;" onmouseover="this.style.background='rgba(255,255,255,0.3)';" onmouseout="this.style.background='rgba(255,255,255,0.2)';">&times;</button>
+            <button onclick="closeChangeRequestForm()" style="background: rgba(255,255,255,0.2); border: none; width: 40px; height: 40px; border-radius: 8px; cursor: pointer; color: white; font-size: 24px; transition: all 0.2s; display: flex; align-items: center; justify-content: center;" onmouseover="this.style.background='rgba(255,255,255,0.3)';" onmouseout="this.style.background='rgba(255,255,255,0.2)';">&times;</button>
         </div>
 
-        <!-- Info Banner -->
-        <div style="background: #fff3cd; border-left: 4px solid #ffc107; padding: 16px 24px; margin: 0;">
-            <p style="margin: 0; color: #856404; font-size: 13px; display: flex; align-items: center; gap: 8px;">
+        <div style="background: #eaf2f8; border-left: 4px solid #2980b9; padding: 16px 24px; margin: 0;">
+            <p style="margin: 0; color: #1b4f72; font-size: 13px; display: flex; align-items: center; gap: 8px;">
                 <i class="fas fa-info-circle"></i>
-                <strong>IT staff will be notified and will contact you to arrange device pickup.</strong>
+                <strong>IT staff will be notified and will contact you to review your change form.</strong>
             </p>
         </div>
 
-        <!-- Form Body -->
         <div style="padding: 28px;">
-            <form id="voluntaryReturnForm" method="POST">
-                <!-- Device Tag (Read-only) -->
+            <form id="changeRequestForm" method="POST">
                 <div style="margin-bottom: 20px;">
                     <label style="display: block; font-weight: 700; margin-bottom: 8px; color: #2c3e50; font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px;">Device</label>
-                    <input type="text" id="returnDeviceTag" readonly style="background: #f0f2f5; padding: 12px 14px; border: 2px solid #e8eaed; border-radius: 8px; width: 100%; font-size: 15px; color: #555; font-weight: 600;">
+                    <input type="text" id="changeDeviceTag" readonly style="background: #f0f2f5; padding: 12px 14px; border: 2px solid #e8eaed; border-radius: 8px; width: 100%; font-size: 15px; color: #555; font-weight: 600;">
                 </div>
 
-                <!-- Return Reason -->
                 <div style="margin-bottom: 24px;">
-                    <label style="display: block; font-weight: 700; margin-bottom: 8px; color: #2c3e50; font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px;">Reason for Return</label>
-                    <textarea id="returnReason" name="return_reason" style="width: 100%; height: 100px; padding: 12px 14px; border: 2px solid #e8eaed; border-radius: 8px; font-family: 'Segoe UI', Arial, sans-serif; font-size: 14px; resize: vertical; transition: border 0.2s;" placeholder="Tell us why you're returning this device..." onfocus="this.style.borderColor='#e74c3c';" onblur="this.style.borderColor='#e8eaed';"></textarea>
+                    <label style="display: block; font-weight: 700; margin-bottom: 8px; color: #2c3e50; font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px;">Reason for Change Request Form</label>
+                    <textarea id="changeReason" name="change_reason" style="width: 100%; height: 100px; padding: 12px 14px; border: 2px solid #e8eaed; border-radius: 8px; font-family: 'Segoe UI', Arial, sans-serif; font-size: 14px; resize: vertical; transition: border 0.2s;" placeholder="Tell us why you are submitting this change request form..." onfocus="this.style.borderColor='#2980b9';" onblur="this.style.borderColor='#e8eaed';"></textarea>
                 </div>
 
-                <input type="hidden" id="returnAssignmentId" name="assignment_id">
+                <input type="hidden" id="changeAssignmentId" name="assignment_id">
 
-                <!-- Action Buttons -->
                 <div style="display: flex; gap: 12px; justify-content: flex-end; padding-top: 18px; border-top: 1px solid #ecf0f1;">
-                    <button type="button" onclick="closeVoluntaryReturn()" style="padding: 12px 24px; border: 2px solid #ddd; background: white; color: #555; border-radius: 8px; font-weight: 600; cursor: pointer; transition: all 0.2s; font-size: 14px;" onmouseover="this.style.background='#f5f5f5';" onmouseout="this.style.background='white';">Cancel</button>
-                    <button type="submit" style="padding: 12px 28px; background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%); color: white; border: none; border-radius: 8px; font-weight: 700; cursor: pointer; transition: all 0.2s; font-size: 14px; box-shadow: 0 4px 15px rgba(231, 76, 60, 0.3);" onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 6px 20px rgba(231, 76, 60, 0.4)';" onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 4px 15px rgba(231, 76, 60, 0.3)';">✓ Submit Return Request</button>
+                    <button type="button" onclick="closeChangeRequestForm()" style="padding: 12px 24px; border: 2px solid #ddd; background: white; color: #555; border-radius: 8px; font-weight: 600; cursor: pointer; transition: all 0.2s; font-size: 14px;" onmouseover="this.style.background='#f5f5f5';" onmouseout="this.style.background='white';">Cancel</button>
+                    <button type="submit" style="padding: 12px 28px; background: linear-gradient(135deg, #2980b9 0%, #1f618d 100%); color: white; border: none; border-radius: 8px; font-weight: 700; cursor: pointer; transition: all 0.2s; font-size: 14px; box-shadow: 0 4px 15px rgba(41, 128, 185, 0.3);" onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 6px 20px rgba(41, 128, 185, 0.4)';" onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 4px 15px rgba(41, 128, 185, 0.3)';">✓ Submit Change Request</button>
                 </div>
             </form>
         </div>
     </div>
-
-    <style>
-        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-        @keyframes slideUp { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
-    </style>
 </div>
 
 <script>
@@ -619,44 +590,43 @@ document.getElementById('reportForm').addEventListener('submit', function(e) {
     });
 });
 
-// Close report modal when clicking outside
 document.getElementById('reportIssueModal').addEventListener('click', function(e) {
     if (e.target === this) closeReportIssue();
 });
 
-// Voluntary Return Functions
-function voluntarilyReturnDevice(assignmentId, assetTag) {
-    document.getElementById('returnAssignmentId').value = assignmentId;
-    document.getElementById('returnDeviceTag').value = assetTag;
-    document.getElementById('voluntaryReturnForm').reset();
-    document.getElementById('voluntaryReturnModal').style.display = 'flex';
+// Change Request Functions
+function openChangeRequestForm(assignmentId, assetTag) {
+    document.getElementById('changeAssignmentId').value = assignmentId;
+    document.getElementById('changeDeviceTag').value = assetTag;
+    document.getElementById('changeRequestForm').reset();
+    document.getElementById('changeRequestModal').style.display = 'flex';
 }
 
-function closeVoluntaryReturn() {
-    document.getElementById('voluntaryReturnModal').style.display = 'none';
+function closeChangeRequestForm() {
+    document.getElementById('changeRequestModal').style.display = 'none';
 }
 
-document.getElementById('voluntaryReturnForm').addEventListener('submit', function(e) {
+document.getElementById('changeRequestForm').addEventListener('submit', function(e) {
     e.preventDefault();
     
-    const assignmentId = document.getElementById('returnAssignmentId').value;
-    const returnReason = document.getElementById('returnReason').value;
+    const assignmentId = document.getElementById('changeAssignmentId').value;
+    const changeReason = document.getElementById('changeReason').value;
     
-    fetch('api_voluntary_device_return.php', {
+    fetch('api_change_request_form.php', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json'
         },
         body: JSON.stringify({
             assignment_id: assignmentId,
-            return_reason: returnReason
+            change_reason: changeReason
         })
     })
     .then(response => response.json())
     .then(data => {
         if (data.success) {
-            alert('Your return request has been submitted successfully. IT staff will contact you to arrange clearance and pickup.');
-            closeVoluntaryReturn();
+            alert('Your change request form has been submitted successfully. IT staff will contact you to review your request.');
+            closeChangeRequestForm();
             location.reload();
         } else {
             alert('Error: ' + data.message);
@@ -664,28 +634,27 @@ document.getElementById('voluntaryReturnForm').addEventListener('submit', functi
     })
     .catch(error => {
         console.error('Error:', error);
-        alert('Failed to submit return request. Please try again.');
+        alert('Failed to submit change request form. Please try again.');
     });
 });
 
-// Close modal when clicking outside
-document.getElementById('voluntaryReturnModal').addEventListener('click', function(e) {
-    if (e.target === this) closeVoluntaryReturn();
+document.getElementById('changeRequestModal').addEventListener('click', function(e) {
+    if (e.target === this) closeChangeRequestForm();
 });
 
 // Move modals to body to escape container constraints
 document.addEventListener('DOMContentLoaded', function() {
     const reportModal = document.getElementById('reportIssueModal');
-    const returnModal = document.getElementById('voluntaryReturnModal');
+    const changeModal = document.getElementById('changeRequestModal');
     
     if (reportModal && reportModal.parentElement) {
         reportModal.parentElement.removeChild(reportModal);
         document.body.appendChild(reportModal);
     }
     
-    if (returnModal && returnModal.parentElement) {
-        returnModal.parentElement.removeChild(returnModal);
-        document.body.appendChild(returnModal);
+    if (changeModal && changeModal.parentElement) {
+        changeModal.parentElement.removeChild(changeModal);
+        document.body.appendChild(changeModal);
     }
 });
 </script>

@@ -1,0 +1,73 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - KBMC Asset Management</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" rel="stylesheet">
+    <link href="assets/css/style.css" rel="stylesheet">
+</head>
+<body class="login-page">
+    <div class="login-container">
+        <div class="login-left">
+            <img src="assets/images/logo.png" alt="KBMC Logo" class="login-logo-img">
+            <h2>Kitchen Beauty<br>Marketing Corp.</h2>
+            <p>Device Arrival & Asset Management System. Track, manage, and monitor your IT assets throughout their entire lifecycle.</p>
+            <ul class="login-features">
+                <li><i class="fas fa-check-circle"></i> Complete device lifecycle management</li>
+                <li><i class="fas fa-check-circle"></i> Role-based access control</li>
+                <li><i class="fas fa-check-circle"></i> Real-time notifications & alerts</li>
+                <li><i class="fas fa-check-circle"></i> Comprehensive reports & analytics</li>
+            </ul>
+        </div>
+        <div class="login-right">
+            <h3>Welcome Back!</h3>
+            <p>Please sign in to your account to continue.</p>
+
+            
+            <form method="POST" class="login-form">
+                <div class="form-group">
+                    <label for="email">Email Address</label>
+                    <input type="text" name="email" id="email" class="form-control" placeholder="Enter your email" required
+                           value="">
+                </div>
+                <div class="form-group">
+                    <label for="password">Password</label>
+                    <input type="password" name="password" id="password" class="form-control" placeholder="Enter your password" required>
+                </div>
+                <div class="form-group" style="display: flex; justify-content: space-between; align-items: center; font-size: 13px;">
+                    <label style="display: flex; align-items: center; gap: 5px; font-weight: normal; margin: 0; cursor: pointer;">
+                        <input type="checkbox" name="remember" id="remember" style="width: auto; cursor: pointer;"> 
+                        <span>Remember me for 30 days</span>
+                    </label>
+                    <a href="forgot_password.php" style="color: var(--kbmc-red); text-decoration: none; font-weight: 600;">Forgot password?</a>
+                </div>
+                <button type="submit" class="btn btn-primary btn-lg">
+                    <i class="fas fa-sign-in-alt"></i> Sign In
+                </button>
+            </form>
+
+            <div style="text-align: center; margin-top: 15px;">
+                <a href="account_recovery.php" style="color: #666; text-decoration: none; font-size: 13px;">
+                    <i class="fas fa-user-shield"></i> Account locked or deactivated? Request recovery
+                </a>
+            </div>
+
+            <div style="text-align: center; margin-top: 15px; padding-top: 15px; border-top: 1px solid #eee;">
+                <p style="font-size: 13px; color: #666; margin: 0 0 8px 0;">Don't have an account?</p>
+                <a href="signup.php" class="btn btn-outline" style="width: 100%; justify-content: center;">
+                    <i class="fas fa-user-plus"></i> Create Employee Account
+                </a>
+            </div>
+
+            <div class="login-footer">
+                <p><strong>Default Login Credentials:</strong></p>
+                <p><strong>Admin:</strong> admin@kbmc.com / password</p>
+                <p><strong>IT Staff:</strong> itstaff@kbmc.com / password</p>
+                <p><strong>Employee:</strong> employee@kbmc.com / password</p>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
+

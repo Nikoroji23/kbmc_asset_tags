@@ -124,10 +124,12 @@ $isAssignedEmployee = (
                 <div><strong style="color:#666;font-size:12px;">Vendor</strong><br><?php echo sanitize($device['vendor'] ?: 'N/A'); ?></div>
                 <div><strong style="color:#666;font-size:12px;">Purchase Date</strong><br><?php echo formatDate($device['purchase_date']); ?></div>
                 <div><strong style="color:#666;font-size:12px;">Warranty Expiry</strong><br><?php echo formatDate($device['warranty_expiry']); ?></div>
+                <?php if ($isITOrAdmin): ?>
                 <div>
                     <strong style="color:#666;font-size:12px;">Purchase Price</strong><br>
                     <?php echo $device['purchase_price'] ? number_format($device['purchase_price'],2).' PHP' : 'N/A'; ?>
                 </div>
+                <?php endif; ?>
                 <?php if ($device['status'] == 'disposed' && isset($device['disposed_by_name'])): ?>
                 <div><strong style="color:#666;font-size:12px;">Disposed By</strong><br><?php echo sanitize($device['disposed_by_name']); ?></div>
                 <div><strong style="color:#666;font-size:12px;">Disposal Date</strong><br><?php echo $device['disposed_at'] ? formatDate($device['disposed_at']) : 'N/A'; ?></div>
@@ -199,11 +201,10 @@ $isAssignedEmployee = (
                     <?php endif; ?>
 
                     <?php if ($isAssignedEmployee): ?>
-                    <!-- Employee-initiated voluntary return -->
                     <a href="return_device.php?id=<?php echo $currentAssignment['id']; ?>&mode=voluntary"
-                       class="btn btn-outline btn-sm"
-                       style="display:inline-flex;align-items:center;gap:6px;border-color:#E67E22;color:#E67E22;">
-                        <i class="fas fa-hand-holding"></i> Voluntarily Return
+                        class="btn btn-outline btn-sm"
+                        style="display:inline-flex;align-items:center;gap:6px;border-color:#E67E22;color:#E67E22;">
+                        <i class="fas fa-exchange-alt"></i> Change Request Form
                     </a>
                     <?php endif; ?>
                 </div>
@@ -212,11 +213,11 @@ $isAssignedEmployee = (
                 <div style="margin-top:12px;background:#FEF9E7;border:1px solid #F39C1240;border-radius:6px;
                              padding:10px 14px;font-size:12px;color:#7D6608;text-align:left;">
                     <i class="fas fa-info-circle"></i>
-                    <strong>Voluntary Return:</strong> Clicking the button opens a return form.
+                    <strong>Change Request Form:</strong> Clicking the button opens a change request form.
                     An IT staff member must be present to inspect the device and co-sign.
                     A printable <strong>IT Clearance Form</strong> will be generated after.
-                </div>
-                <?php endif; ?>
+</div>
+<?php endif; ?>
             </div>
 
             <?php else: ?>

@@ -1,4 +1,4 @@
-<?php
+    <?php
 /**
  * KBMC Asset Management - Account Creation Records (Admin Only)
  * Tracks all employee account registrations

@@ -193,18 +193,20 @@ $assignments = $stmt->fetchAll();
                     <?php if (empty($availableDevices)): ?>
                         <div class="alert alert-warning">No devices are currently available for deployment.</div>
                     <?php else: ?>
-                        <div class="device-selection-toolbar" style="display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:12px; margin-bottom:12px;">
-                            <div style="flex:1; min-width:260px; display:flex; gap:8px; align-items:center; position:relative;">
-                                <input id="deviceSearch" list="deviceList" class="form-control" placeholder="Search asset tag or device type" style="flex:1; min-width:220px;" onkeydown="handleDeviceSearchKey(event)">
-                                <datalist id="deviceList">
+                        <div class="device-selection-toolbar" style="display:flex; flex-wrap:wrap; align-items:flex-start; justify-content:space-between; gap:12px; margin-bottom:12px;">
+                            <div style="flex:1; min-width:260px; display:flex; flex-direction:column; gap:8px;">
+                                <input id="deviceSearch" class="form-control" placeholder="Filter devices by asset tag or type" style="width:100%;" autocomplete="off">
+                                <select id="deviceSelect" class="form-control" size="6" style="width:100%; min-height:160px;">
                                     <?php foreach ($availableDevices as $dev): ?>
-                                    <option value="<?php echo sanitize($dev['asset_tag']); ?>"><?php echo sanitize($dev['type_name']); ?></option>
+                                    <?php if (!empty($dev['asset_tag'])): ?>
+                                    <option value="<?php echo sanitize($dev['id']); ?>"><?php echo sanitize($dev['asset_tag'] . ' - ' . $dev['type_name']); ?></option>
+                                    <?php endif; ?>
                                     <?php endforeach; ?>
-                                </datalist>
-                                <button type="button" class="btn btn-sm btn-outline" onclick="clearDeviceSearch()">Reset</button>
+                                </select>
                             </div>
-                            <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
-                                <button type="button" class="btn btn-sm btn-primary" onclick="addDeviceFromSearch()">Add</button>
+                            <div style="display:flex; flex-direction:column; gap:8px; justify-content:flex-start; position:relative; z-index:2;">
+                                <button type="button" class="btn btn-sm btn-outline" onclick="clearDeviceSearch()" style="display: inline-flex; align-items: center; justify-content: center; text-align: center;">Reset</button>
+                                <button id="addDeviceBtn" type="button" class="btn btn-sm btn-primary" style="position:relative; z-index:2; pointer-events:auto; display: inline-flex; align-items: center; justify-content: center; text-align: center;">Add</button>
                                 <span style="font-size:0.95rem; color:#555;">Selected: <span id="selectedDeviceCount">0</span></span>
                             </div>
                         </div>
@@ -311,6 +313,7 @@ function exportDeploymentsPDF() {
 }
 
 const availableDevices = <?php echo json_encode($availableDevices, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP); ?>;
+const preselectedDeviceId = <?php echo json_encode($preselectedDevice, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP); ?>;
 let selectedDeviceIds = [];
 
 function handleDeviceSearchKey(event) {
@@ -320,54 +323,76 @@ function handleDeviceSearchKey(event) {
     }
 }
 
-function addDeviceFromSearch() {
-    const input = document.getElementById('deviceSearch');
-    const query = input.value.trim();
-    if (!query) return;
+function filterDeviceOptions() {
+    const searchInput = document.getElementById('deviceSearch');
+    const select = document.getElementById('deviceSelect');
+    if (!searchInput || !select) return;
 
-    // Try to find exact asset_tag match first, otherwise fallback to contains
-    let device = availableDevices.find(dev => !selectedDeviceIds.includes(dev.id) && dev.asset_tag.toLowerCase() === query.toLowerCase());
-    if (!device) {
-        device = availableDevices.find(dev => !selectedDeviceIds.includes(dev.id) && (dev.asset_tag.toLowerCase().includes(query.toLowerCase()) || dev.type_name.toLowerCase().includes(query.toLowerCase())));
+    const query = searchInput.value.trim().toLowerCase();
+    for (const option of select.options) {
+        const text = option.text.toLowerCase();
+        option.hidden = query && !text.includes(query);
     }
-    if (device) {
-        addSelectedDevice(device.id);
-        input.value = '';
+
+    const firstVisible = Array.from(select.options).find(option => !option.hidden);
+    if (firstVisible) {
+        select.value = firstVisible.value;
     }
+}
+
+function addDeviceFromSearch() {
+    const select = document.getElementById('deviceSelect');
+    if (!select) return;
+
+    const selectedOption = select.options[select.selectedIndex];
+    if (!selectedOption || selectedOption.hidden) {
+        alert('Please select a device from the list before clicking Add.');
+        return;
+    }
+
+    const deviceId = selectedOption.value;
+    if (!deviceId) {
+        alert('The selected device is invalid. Please choose a different device.');
+        return;
+    }
+
+    const device = availableDevices.find(dev => String(dev.id) === String(deviceId));
+    if (!device || !device.asset_tag) {
+        alert('The selected device entry is incomplete and cannot be added.');
+        return;
+    }
+
+    addSelectedDevice(deviceId);
 }
 
 function clearDeviceSearch() {
-    document.getElementById('deviceSearch').value = '';
-}
-
-function updateDatalistOptions() {
-    const list = document.getElementById('deviceList');
-    if (!list) return;
-    // Clear existing options
-    list.innerHTML = '';
-    // Rebuild options excluding already selected devices
-    availableDevices.forEach(dev => {
-        if (selectedDeviceIds.includes(dev.id)) return;
-        const opt = document.createElement('option');
-        opt.value = dev.asset_tag;
-        opt.text = dev.type_name;
-        list.appendChild(opt);
-    });
+    const searchInput = document.getElementById('deviceSearch');
+    const select = document.getElementById('deviceSelect');
+    if (searchInput) {
+        searchInput.value = '';
+    }
+    if (select) {
+        for (const option of select.options) {
+            option.hidden = false;
+        }
+        if (select.options.length > 0) {
+            select.selectedIndex = 0;
+        }
+    }
 }
 
 function addSelectedDevice(deviceId) {
-    if (selectedDeviceIds.includes(deviceId)) {
+    const id = String(deviceId);
+    if (selectedDeviceIds.includes(id)) {
         return;
     }
-    selectedDeviceIds.push(deviceId);
+    selectedDeviceIds.push(id);
     renderSelectedDevicesTable();
-    updateDatalistOptions();
 }
 
 function removeSelectedDevice(deviceId) {
-    selectedDeviceIds = selectedDeviceIds.filter(id => id !== deviceId);
+    selectedDeviceIds = selectedDeviceIds.filter(id => id !== String(deviceId));
     renderSelectedDevicesTable();
-    updateDatalistOptions();
 }
 
 function renderSelectedDevicesTable() {
@@ -385,8 +410,8 @@ function renderSelectedDevicesTable() {
     }
 
     selectedDeviceIds.forEach((deviceId, index) => {
-        const device = availableDevices.find(dev => dev.id === deviceId);
-        if (!device) return;
+        const device = availableDevices.find(dev => String(dev.id) === String(deviceId));
+        if (!device || !device.asset_tag) return;
         const row = document.createElement('tr');
         row.innerHTML = `<td style="padding: 10px;">${index + 1}</td>
                          <td style="padding: 10px;">${escapeHtml(device.asset_tag)}</td>
@@ -401,6 +426,17 @@ function renderSelectedDevicesTable() {
     emptyMessage.style.display = 'none';
     container.style.display = 'block';
     document.getElementById('selectedDeviceCount').textContent = selectedDeviceIds.length.toString();
+
+    const select = document.getElementById('deviceSelect');
+    if (select) {
+        for (const option of select.options) {
+            option.disabled = selectedDeviceIds.includes(option.value);
+        }
+        const firstVisible = Array.from(select.options).find(option => !option.hidden && !option.disabled);
+        if (firstVisible) {
+            select.value = firstVisible.value;
+        }
+    }
 }
 
 function escapeHtml(value) {
@@ -414,7 +450,28 @@ function escapeHtml(value) {
 
 window.addEventListener('DOMContentLoaded', function() {
     renderSelectedDevicesTable();
-    updateDatalistOptions();
+
+    if (preselectedDeviceId) {
+        const preselectedDevice = availableDevices.find(dev => String(dev.id) === String(preselectedDeviceId));
+        if (preselectedDevice && !selectedDeviceIds.includes(String(preselectedDevice.id))) {
+            addSelectedDevice(String(preselectedDevice.id));
+            const deviceSearchInput = document.getElementById('deviceSearch');
+            if (deviceSearchInput) {
+                deviceSearchInput.value = preselectedDevice.asset_tag;
+            }
+        }
+    }
+
+    const addDeviceBtn = document.getElementById('addDeviceBtn');
+    if (addDeviceBtn) {
+        addDeviceBtn.addEventListener('click', addDeviceFromSearch);
+    }
+
+    const deviceSearchInput = document.getElementById('deviceSearch');
+    if (deviceSearchInput) {
+        deviceSearchInput.addEventListener('keydown', handleDeviceSearchKey);
+        deviceSearchInput.addEventListener('input', filterDeviceOptions);
+    }
 });
 </script>
 
