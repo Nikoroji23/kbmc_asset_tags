@@ -13,6 +13,7 @@
 $pageTitle = 'IT User Clearance';
 require_once 'includes/functions.php';
 ensureChangeRequestSchema();
+ensureControlSequenceUserSchema();
 requireITStaff();
 
 $successMessage = '';
@@ -34,17 +35,7 @@ $preselectedDevId = isset($_GET['device_id']) ? (int)$_GET['device_id'] : 0;
 $isSingleMode     = $preselectedDevId > 0;
 $modeLabel        = $isSingleMode ? 'Single-Device Clearance' : 'IT User Clearance';
 $isDone           = isset($_GET['done']) && $_GET['done'] == '1';
-/* ─── dynamic sequential control number generator ───────────────────────── */
-$baseSequence = 0;
-$countPastAssignments = 0;
-try {
-    $countStmt = $pdo->query("SELECT COUNT(DISTINCT employee_id) FROM device_assignments WHERE status = 'returned'");
-    $countPastAssignments = (int)$countStmt->fetchColumn();
-} catch (Exception $e) {
-    $countPastAssignments = 0;
-}
-
-$currentSequenceValue = $countPastAssignments;
+$currentSequenceValue = 0;
 
 /* ─── POST: process clearance ───────────────────────────────────────────── */
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'process_clearance') {
@@ -245,6 +236,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                     $deviceList = implode(', ', $deviceTags);
 
                     if (session_status() === PHP_SESSION_NONE) session_start();
+                    // Atomically allocate the next per-user control sequence for this processed clearance
+                    $nextControlSeq = getNextControlSequenceForUser($userId);
                     $_SESSION['last_clearance_processed'] = [
                         'user' => $user,
                         'devices' => $assignments,
@@ -252,7 +245,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                         'device_list' => $deviceList,
                         'notes' => $notes,
                         'date' => date('F j, Y'),
-                        'control_no' => 'IT-26-' . str_pad($currentSequenceValue, 4, '0', STR_PAD_LEFT),
+                        'control_no' => 'IT-26-' . str_pad($nextControlSeq, 4, '0', STR_PAD_LEFT),
                         'message' => $successMessage ?? ''
                     ];
                     
@@ -273,6 +266,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 /* ─── GET params & Data Fetching ────────────────────────────────────────── */
 $selectedUserId = isset($_GET['user_id']) ? (int)$_GET['user_id'] : 0;
 $preselectedAssignmentId = isset($_GET['assignment_id']) ? (int)$_GET['assignment_id'] : 0;
+if ($selectedUserId > 0) {
+    $currentSequenceValue = getCurrentControlSequenceForUser($selectedUserId);
+}
 
 $employees = $pdo->query("SELECT id, employee_id, full_name, department, position FROM users WHERE status = 'active' AND role = 'employee' ORDER BY full_name")->fetchAll();
 $itStaff = $pdo->query("SELECT id, full_name, employee_id FROM users WHERE role IN ('admin','it_staff') AND status = 'active' ORDER BY full_name")->fetchAll();
@@ -425,6 +421,9 @@ require_once 'includes/header.php';
             position: absolute; left: 0; top: 0; width: 100%;
         }
 
+        /* Hide footer metadata (version / page numbering) when printing */
+        body.print-mode-cr .cr-footer-meta { display: none !important; }
+
         .page-break {
             page-break-before: always;
             clear: both;
@@ -477,7 +476,7 @@ if (!empty($_SESSION['last_clearance_processed']) && isset($_GET['done']) && $_G
 
 $printDevices = $lastClear ? $lastClear['devices'] : (!empty($formDevices) ? $formDevices : $assignedDevices);
 $printUser = $lastClear ? $lastClear['user'] : $selectedUser;
-$displayControlNumber = $lastClear ? $lastClear['control_no'] : 'IT-26-' . str_pad($currentSequenceValue, 4, '0', STR_PAD_LEFT);
+$displayControlNumber = $lastClear ? $lastClear['control_no'] : 'IT-26-' . str_pad($currentSequenceValue + 1, 4, '0', STR_PAD_LEFT);
 
 $changeRequestDisplayDate = $changeRequestSubmittedAt ? date('Y-m-d', strtotime($changeRequestSubmittedAt)) : date('Y-m-d');
 
@@ -533,7 +532,7 @@ function renderChangeTypeCheckbox($label) {
     </table>
 
     <div style="font-weight:bold; margin-top:12px; margin-bottom:4px;">Remarks:</div>
-    <div style="border:1px solid #000; min-height:50px; padding:6px; font-size:11px; margin-bottom:15px; white-space:pre-wrap;"><?php echo htmlspecialchars($lastClear['notes'] ?? ($_POST['clearance_notes'] ?? '')); ?></div>
+    <div id="print_clearance_remarks" style="border:1px solid #000; min-height:50px; padding:6px; font-size:11px; margin-bottom:15px; white-space:pre-wrap;"><?php echo htmlspecialchars($lastClear['notes'] ?? ($_POST['clearance_notes'] ?? '')); ?></div>
 
     <div style="font-size:11px; text-align:justify; margin-bottom:30px; line-height:1.4;">
         I, <strong><u><?php echo sanitize($printUser['full_name'] ?? '____________________________'); ?></u></strong>, confirm that all listed items have been returned in good condition. Any issues found during IT inspection will be handled according to policy.
@@ -739,7 +738,7 @@ if ($changeRequestDetails) {
                     <p><strong>Employee Name:</strong> <?php echo sanitize($selectedUser['full_name']); ?></p>
                     <p><strong>Employee ID:</strong> <?php echo sanitize($selectedUser['employee_id']); ?></p>
                     <p><strong>Department:</strong> <?php echo sanitize($selectedUser['department']); ?></p>
-                    <p><strong>Pending Control No:</strong> <span style="font-family:monospace; font-weight:bold; color:#16a085;"><?php echo 'IT-26-' . str_pad($currentSequenceValue, 4, '0', STR_PAD_LEFT); ?></span></p>
+                    <p><strong>Pending Control No:</strong> <span style="font-family:monospace; font-weight:bold; color:#16a085;"><?php echo 'IT-26-' . str_pad($currentSequenceValue + 1, 4, '0', STR_PAD_LEFT); ?></span></p>
                 </div>
                 <div style="flex:1; min-width:250px;">
                     <div class="form-group">
@@ -811,6 +810,16 @@ if ($changeRequestDetails) {
 
 <script type="text/javascript">
 function printClearanceForm() {
+    // copy current textarea value into printable remarks area so client-side notes appear in the PDF
+    try {
+        var ta = document.getElementById('clearance_notes');
+        var dst = document.getElementById('print_clearance_remarks');
+        if (ta && dst) {
+            // set as textContent to preserve plain text and newlines (pre-wrap handles formatting)
+            dst.textContent = ta.value || '';
+        }
+    } catch (e) { console.warn('Could not copy clearance notes for printing', e); }
+
     document.body.classList.remove('print-mode-cr');
     document.body.classList.add('print-mode-clearance');
     window.print();

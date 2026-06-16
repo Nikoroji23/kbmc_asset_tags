@@ -67,7 +67,9 @@ $repairs = $stmt->fetchAll();
 $showChangeRequestForm = false;
 
 if (isset($_GET['mode']) && $_GET['mode'] === 'voluntary' && $currentAssignment && hasRole('employee') && isset($_SESSION['user_id']) && (int)$_SESSION['user_id'] === (int)$currentAssignment['employee_id']) {
+    ensureControlSequenceUserSchema();
     $showChangeRequestForm = true;
+    $pendingChangeRequestNumber = getCurrentControlSequenceForUser((int)$_SESSION['user_id']) + 1;
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'submit_change_request') {
@@ -80,8 +82,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         exit();
     }
 
+    ensureControlSequenceUserSchema();
+    $submittedChangeRequestNumber = getNextControlSequenceForUser((int)$_SESSION['user_id']);
+    $formattedChangeRequestNo = str_pad($submittedChangeRequestNumber, 4, '0', STR_PAD_LEFT);
+
     $title = 'Device Change Requested';
-    $message = "Employee {$currentAssignment['employee_name']} submitted a change request form for device {$device['asset_tag']}.";
+    $message = "Employee {$currentAssignment['employee_name']} submitted a change request form for device {$device['asset_tag']} (Change Request No. {$formattedChangeRequestNo}).";
     $message .= " Type: {$changeType}. Details: {$changeDetails}";
 
     notifyITStaff('user_clearance_required', $title, $message, $currentAssignment['id']);
@@ -121,7 +127,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                     <div style="font-size:13px;color:#475569;margin-top:3px;">(632) 8242 1731</div>
                 </div>
                 <div style="font-size:28px;font-weight:800;color:#111827;letter-spacing:0.08em;">CHANGE REQUEST FORM</div>
-                <div style="margin-top:6px;font-size:13px;color:#111827;">Change Request No.: <strong style="display:inline-block;width:70px;text-align:center;"><?php echo str_pad(max(0, intval($currentAssignment['id']) - 1), 4, '0', STR_PAD_LEFT); ?></strong></div>
+                <div style="margin-top:6px;font-size:13px;color:#111827;">Change Request No.: <strong style="display:inline-block;width:70px;text-align:center;">
+                    <?php echo str_pad(max(1, intval($pendingChangeRequestNumber ?? 1)), 4, '0', STR_PAD_LEFT); ?>
+                </strong></div>
             </div>
         </div>
 

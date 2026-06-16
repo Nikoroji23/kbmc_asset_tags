@@ -149,7 +149,7 @@ ORDER BY total DESC")->fetchAll();
         <a href="deployments.php?action=assign" class="btn btn-success" style="flex: 1; min-width: 150px;">
             <i class="fas fa-hand-holding"></i> Deploy Device
         </a>
-        <a href="maintenance_repairs.php" class="btn btn-info" style="flex: 1; min-width: 150px;">
+        <a href="maintenance_repairs.php" class="btn btn-maintenance" style="flex: 1; min-width: 150px;">
             <i class="fas fa-calendar-check"></i> Maintenance
         </a>
         <a href="it_clearance.php" class="btn btn-danger" style="flex: 1; min-width: 150px;">

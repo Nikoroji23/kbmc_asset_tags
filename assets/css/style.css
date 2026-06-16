@@ -199,6 +199,19 @@ body {
     flex-shrink: 0;
 }
 
+/* Maintenance nav icon: keep standard icon appearance (no purple background) */
+.nav-item.maintenance-item i {
+    background: transparent;
+    color: rgba(255,255,255,0.85);
+    padding: 0;
+    border-radius: 0;
+    width: 22px;
+    height: auto;
+    display: inline-block;
+    font-size: 16px;
+    text-align: center;
+}
+
 .nav-badge {
     margin-left: auto;
     background: white;
@@ -385,6 +398,18 @@ body {
     text-align: center;
     color: #999;
     font-size: 14px;
+}
+
+/* Quick action maintenance button */
+.btn-maintenance {
+    background: #6f42c1;
+    color: #fff;
+    border: 1px solid #6f42c1;
+}
+.btn-maintenance:hover {
+    background: #5b349f;
+    border-color: #5b349f;
+    color: #fff;
 }
 
 /* Main Content */

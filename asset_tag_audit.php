@@ -87,6 +87,30 @@ $sql = "SELECT * FROM (
 
     UNION ALL
 
+        (SELECT 
+            'change_request' as activity_type,
+            al.id,
+            al.user_id,
+            al.action,
+            al.table_name,
+            al.record_id as device_id,
+            al.old_values,
+            al.new_values,
+            al.created_at,
+            u.full_name as staff_name,
+            u.employee_id as staff_emp_id,
+            d.asset_tag,
+            dt.type_name,
+            NULL as employee_name,
+            NULL as assignment_status
+        FROM audit_logs al
+        JOIN users u ON al.user_id = u.id
+        LEFT JOIN devices d ON al.record_id = d.id
+        LEFT JOIN device_types dt ON d.device_type_id = dt.id
+        WHERE al.table_name = 'device_assignments' AND (al.action LIKE '%CHANGE%' OR al.action LIKE '%Change%'))
+
+    UNION ALL
+
     (SELECT 
         'clearance' as activity_type,
         al.id,
@@ -258,6 +282,7 @@ $allITStaff = $pdo->query("
                         <option value="inspection" <?php echo $activity_type === 'inspection' ? 'selected' : ''; ?>>Device Inspection</option>
                         <option value="deployment" <?php echo $activity_type === 'deployment' ? 'selected' : ''; ?>>Device Deployment</option>
                         <option value="clearance" <?php echo $activity_type === 'clearance' ? 'selected' : ''; ?>>Device Clearance</option>
+                        <option value="change_request" <?php echo $activity_type === 'change_request' ? 'selected' : ''; ?>>Change Request</option>
                         <option value="asset_tag_change" <?php echo $activity_type === 'asset_tag_change' ? 'selected' : ''; ?>>Asset Tag Changes</option>
                         <option value="maintenance" <?php echo $activity_type === 'maintenance' ? 'selected' : ''; ?>>Maintenance</option>
                         <option value="repair" <?php echo $activity_type === 'repair' ? 'selected' : ''; ?>>Device Repair</option>
@@ -333,6 +358,7 @@ $allITStaff = $pdo->query("
                             'inspection' => ['icon' => 'fa-clipboard-check', 'color' => '#3498db', 'label' => 'Device Inspection'],
                             'deployment' => ['icon' => 'fa-hand-holding', 'color' => '#27ae60', 'label' => 'Device Deployed'],
                             'clearance' => ['icon' => 'fa-check-circle', 'color' => '#9b59b6', 'label' => 'IT Clearance'],
+                            'change_request' => ['icon' => 'fa-exchange-alt', 'color' => '#2980b9', 'label' => 'Change Request'],
                             'asset_tag_change' => ['icon' => 'fa-edit', 'color' => '#e74c3c', 'label' => 'Asset Tag Changed'],
                             'maintenance' => ['icon' => 'fa-wrench', 'color' => '#f39c12', 'label' => 'Maintenance'],
                             'repair' => ['icon' => 'fa-tools', 'color' => '#e67e22', 'label' => 'Repair'],
@@ -364,6 +390,9 @@ $allITStaff = $pdo->query("
                             $details .= "</small>";
                         } elseif ($log['activity_type'] === 'clearance') {
                             $details = "<small style='color: #666;'><strong>Action:</strong> " . sanitize($log['action']) . "</small>";
+                        } elseif ($log['activity_type'] === 'change_request') {
+                            $newData = json_decode($log['new_values'], true) ?? [];
+                            $details = "<small style='color: #666;'><strong>Type:</strong> " . sanitize($newData['change_type'] ?? 'N/A') . "</small>";
                         }
                         ?>
                     <tr>

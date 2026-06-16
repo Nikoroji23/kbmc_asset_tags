@@ -390,12 +390,7 @@ if (!$currentUser) {
         <h3><i class="fas fa-list"></i> Your Devices (<?php echo count($assignedDevices); ?> Total)</h3>
     </div>
     <div class="card-body">
-        <div style="background: #eaf4ff; border: 1px solid #b6d9ff; color: #0f4c81; padding: 18px 20px; border-radius: 10px; margin-bottom: 20px;">
-            <h4 style="margin: 0 0 8px 0; font-size: 16px;">Change Request Form</h4>
-            <p style="margin: 0; font-size: 14px; line-height: 1.6;">
-                To request a device change, click the <strong>Change Request Form</strong> button in the Actions column. A fillable form will open first. After you submit it, IT staff will receive the request as a printable PDF.
-            </p>
-        </div>
+        <!-- Change Request info box removed as requested -->
         <?php if (!empty($assignedDevices)): ?>
         <div class="data-table-wrapper">
             <table class="data-table">

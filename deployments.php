@@ -153,7 +153,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['assign_device'])) {
 $preselectedDevice = $_GET['device'] ?? '';
 
 // Get available devices
-$availableDevices = $pdo->query("SELECT d.id, d.asset_tag, dt.type_name FROM devices d JOIN device_types dt ON d.device_type_id = dt.id WHERE d.status = 'in_stock' ORDER BY d.asset_tag")->fetchAll();
+$availableDevices = $pdo->query("SELECT d.id, d.asset_tag, COALESCE(dt.type_name, 'N/A') AS type_name FROM devices d LEFT JOIN device_types dt ON d.device_type_id = dt.id WHERE d.status = 'in_stock' ORDER BY d.asset_tag")->fetchAll();
 
 // Get active employees
 $employees = $pdo->query("SELECT id, full_name, CONCAT(department, ' - ', position) as dept FROM users WHERE status = 'active' AND role = 'employee' ORDER BY full_name")->fetchAll();
@@ -198,9 +198,8 @@ $assignments = $stmt->fetchAll();
                                 <input id="deviceSearch" class="form-control" placeholder="Filter devices by asset tag or type" style="width:100%;" autocomplete="off">
                                 <select id="deviceSelect" class="form-control" size="6" style="width:100%; min-height:160px;">
                                     <?php foreach ($availableDevices as $dev): ?>
-                                    <?php if (!empty($dev['asset_tag'])): ?>
-                                    <option value="<?php echo sanitize($dev['id']); ?>"><?php echo sanitize($dev['asset_tag'] . ' - ' . $dev['type_name']); ?></option>
-                                    <?php endif; ?>
+                                    <?php $displayTag = $dev['asset_tag'] ?: 'N/A'; ?>
+                                    <option value="<?php echo sanitize($dev['id']); ?>"><?php echo sanitize($displayTag . ' - ' . $dev['type_name']); ?></option>
                                     <?php endforeach; ?>
                                 </select>
                             </div>
@@ -357,7 +356,7 @@ function addDeviceFromSearch() {
     }
 
     const device = availableDevices.find(dev => String(dev.id) === String(deviceId));
-    if (!device || !device.asset_tag) {
+    if (!device) {
         alert('The selected device entry is incomplete and cannot be added.');
         return;
     }
@@ -409,12 +408,13 @@ function renderSelectedDevicesTable() {
         return;
     }
 
-    selectedDeviceIds.forEach((deviceId, index) => {
+        selectedDeviceIds.forEach((deviceId, index) => {
         const device = availableDevices.find(dev => String(dev.id) === String(deviceId));
-        if (!device || !device.asset_tag) return;
+        if (!device) return;
         const row = document.createElement('tr');
+        const displayTag = device.asset_tag || 'N/A';
         row.innerHTML = `<td style="padding: 10px;">${index + 1}</td>
-                         <td style="padding: 10px;">${escapeHtml(device.asset_tag)}</td>
+                         <td style="padding: 10px;">${escapeHtml(displayTag)}</td>
                          <td style="padding: 10px;">${escapeHtml(device.type_name)}</td>
                          <td style="padding: 10px; text-align:center;">
                              <button type="button" class="btn btn-sm btn-outline" onclick="removeSelectedDevice(${device.id})">Remove</button>
@@ -457,7 +457,7 @@ window.addEventListener('DOMContentLoaded', function() {
             addSelectedDevice(String(preselectedDevice.id));
             const deviceSearchInput = document.getElementById('deviceSearch');
             if (deviceSearchInput) {
-                deviceSearchInput.value = preselectedDevice.asset_tag;
+                deviceSearchInput.value = preselectedDevice.asset_tag || 'N/A';
             }
         }
     }

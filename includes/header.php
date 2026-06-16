@@ -188,7 +188,7 @@ $pageTitle = $pageTitle ?? 'KBMC Asset Management';
             </a>
 
             <?php if (hasRole('it_staff')): ?>
-            <a href="maintenance_repairs.php" class="nav-item <?php echo in_array(basename($_SERVER['PHP_SELF']), ['maintenance_repairs.php', 'maintenance_reminders.php', 'repairs.php']) ? 'active' : ''; ?>">
+            <a href="maintenance_repairs.php" class="nav-item maintenance-item <?php echo in_array(basename($_SERVER['PHP_SELF']), ['maintenance_repairs.php', 'maintenance_reminders.php', 'repairs.php']) ? 'active' : ''; ?>">
                 <i class="fas fa-tools"></i>
                 <span>Maintenance & Repairs</span>
                 <?php

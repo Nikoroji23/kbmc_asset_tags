@@ -2548,3 +2548,160 @@ function getActiveDeviceAssignment($deviceId) {
     $stmt->execute([$deviceId]);
     return $stmt->fetch();
 }
+
+/**
+ * Ensure a simple control sequence table exists to allocate incrementing control numbers.
+ * Table: control_sequence (id INT PRIMARY KEY, seq INT NOT NULL)
+ */
+function ensureControlSequenceSchema() {
+    static $checked = false;
+    if ($checked) return;
+    $checked = true;
+
+    if (!tableExists('control_sequence')) {
+        try {
+            $GLOBALS['pdo']->exec(
+                "CREATE TABLE IF NOT EXISTS control_sequence (
+                    id INT PRIMARY KEY,
+                    seq INT NOT NULL
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+            );
+            // Ensure a single row exists with id=1
+            $stmt = $GLOBALS['pdo']->prepare("SELECT COUNT(*) FROM control_sequence WHERE id = 1");
+            $stmt->execute();
+            $has = (int)$stmt->fetchColumn();
+            if ($has === 0) {
+                $ins = $GLOBALS['pdo']->prepare("INSERT INTO control_sequence (id, seq) VALUES (1, 0)");
+                $ins->execute();
+            }
+        } catch (PDOException $e) {
+            error_log('[ensureControlSequenceSchema] ' . $e->getMessage());
+        }
+    } else {
+        // Make sure row id=1 exists
+        try {
+            $stmt = $GLOBALS['pdo']->prepare("SELECT COUNT(*) FROM control_sequence WHERE id = 1");
+            $stmt->execute();
+            $has = (int)$stmt->fetchColumn();
+            if ($has === 0) {
+                $ins = $GLOBALS['pdo']->prepare("INSERT INTO control_sequence (id, seq) VALUES (1, 0)");
+                $ins->execute();
+            }
+        } catch (PDOException $e) {
+            error_log('[ensureControlSequenceSchema-checkrow] ' . $e->getMessage());
+        }
+    }
+}
+
+function ensureControlSequenceUserSchema() {
+    static $checked = false;
+    if ($checked) return;
+    $checked = true;
+
+    if (!tableExists('control_sequence_user')) {
+        try {
+            $GLOBALS['pdo']->exec(
+                "CREATE TABLE IF NOT EXISTS control_sequence_user (
+                    user_id INT PRIMARY KEY,
+                    seq INT NOT NULL
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+            );
+        } catch (PDOException $e) {
+            error_log('[ensureControlSequenceUserSchema] ' . $e->getMessage());
+        }
+    }
+}
+
+/**
+ * Return current per-user sequence value (int). Defaults to 0 when missing.
+ */
+function getCurrentControlSequenceForUser(int $userId) {
+    if ($userId <= 0) {
+        return 0;
+    }
+    ensureControlSequenceUserSchema();
+    try {
+        $stmt = $GLOBALS['pdo']->prepare("SELECT seq FROM control_sequence_user WHERE user_id = ? LIMIT 1");
+        $stmt->execute([$userId]);
+        $v = $stmt->fetchColumn();
+        return $v === false ? 0 : (int)$v;
+    } catch (PDOException $e) {
+        error_log('[getCurrentControlSequenceForUser] ' . $e->getMessage());
+        return 0;
+    }
+}
+
+/**
+ * Atomically increment the per-user sequence and return the new value.
+ */
+function getNextControlSequenceForUser(int $userId) {
+    if ($userId <= 0) {
+        return getNextControlSequence();
+    }
+    ensureControlSequenceUserSchema();
+    try {
+        $GLOBALS['pdo']->beginTransaction();
+        $stmt = $GLOBALS['pdo']->prepare("SELECT seq FROM control_sequence_user WHERE user_id = ? FOR UPDATE");
+        $stmt->execute([$userId]);
+        $current = $stmt->fetchColumn();
+        if ($current === false) {
+            $next = 1;
+            $ins = $GLOBALS['pdo']->prepare("INSERT INTO control_sequence_user (user_id, seq) VALUES (?, ?)");
+            $ins->execute([$userId, $next]);
+        } else {
+            $next = (int)$current + 1;
+            $upd = $GLOBALS['pdo']->prepare("UPDATE control_sequence_user SET seq = ? WHERE user_id = ?");
+            $upd->execute([$next, $userId]);
+        }
+        $GLOBALS['pdo']->commit();
+        return $next;
+    } catch (PDOException $e) {
+        try { if ($GLOBALS['pdo']->inTransaction()) $GLOBALS['pdo']->rollBack(); } catch (Exception $_) {}
+        error_log('[getNextControlSequenceForUser] ' . $e->getMessage());
+        $cur = getCurrentControlSequenceForUser($userId);
+        return $cur + 1;
+    }
+}
+
+/**
+ * Return current sequence value (int). Defaults to 0 when missing.
+ */
+function getCurrentControlSequence() {
+    ensureControlSequenceSchema();
+    try {
+        $stmt = $GLOBALS['pdo']->prepare("SELECT seq FROM control_sequence WHERE id = 1 LIMIT 1");
+        $stmt->execute();
+        $v = $stmt->fetchColumn();
+        return $v === false ? 0 : (int)$v;
+    } catch (PDOException $e) {
+        error_log('[getCurrentControlSequence] ' . $e->getMessage());
+        return 0;
+    }
+}
+
+/**
+ * Atomically increment the sequence and return the new value.
+ * Uses MySQL LAST_INSERT_ID(seq+1) trick for atomic increment.
+ */
+function getNextControlSequence() {
+    ensureControlSequenceSchema();
+    try {
+        // Perform an atomic increment and return the new sequence using LAST_INSERT_ID
+        $GLOBALS['pdo']->beginTransaction();
+        $GLOBALS['pdo']->exec("UPDATE control_sequence SET seq = LAST_INSERT_ID(seq + 1) WHERE id = 1");
+        $next = (int)$GLOBALS['pdo']->query("SELECT LAST_INSERT_ID()")->fetchColumn();
+        $GLOBALS['pdo']->commit();
+        if ($next <= 0) {
+            // Fallback: fetch current and add 1
+            $cur = getCurrentControlSequence();
+            $next = $cur + 1;
+        }
+        return $next;
+    } catch (PDOException $e) {
+        try { if ($GLOBALS['pdo']->inTransaction()) $GLOBALS['pdo']->rollBack(); } catch (Exception $_) {}
+        error_log('[getNextControlSequence] ' . $e->getMessage());
+        // Best effort fallback
+        $cur = getCurrentControlSequence();
+        return $cur + 1;
+    }
+}

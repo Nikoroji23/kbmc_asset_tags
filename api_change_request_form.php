@@ -225,7 +225,65 @@ try {
         $assignment['device_id'],
         "Device change pipeline initiated by employee {$assignment['employee_name']}. Asset Tag: {$assignment['asset_tag']}"
     );
-    
+
+    // Also write a clear, human-friendly audit entry to ensure visibility in IT Audit Log
+    // (some views filter or match specific action text; this guarantees a consistent entry)
+    logAudit(
+        $userId,
+        'Change Request Submitted',
+        'device_assignments',
+        $assignmentId,
+        null,
+        json_encode([
+            'asset_tag' => $assignment['asset_tag'],
+            'device_id' => $assignment['device_id'],
+            'change_type' => $changeType,
+            'change_details' => $changeDetails
+        ]),
+        'ChangeRequest'
+    );
+
+    // Ensure an explicit audit_logs row exists (fallback / debugging) so the UI can pick it up.
+    try {
+        $ipAddr = $_SERVER['REMOTE_ADDR'] ?? null;
+        if (function_exists('auditLogsHasActivityTypeColumn') && auditLogsHasActivityTypeColumn()) {
+            $ins = $pdo->prepare("INSERT INTO audit_logs (user_id, action, table_name, record_id, activity_type, old_values, new_values, ip_address) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+            $ins->execute([
+                $userId,
+                'Change Request Submitted',
+                'device_assignments',
+                $assignmentId,
+                'ChangeRequest',
+                null,
+                json_encode([
+                    'asset_tag' => $assignment['asset_tag'],
+                    'device_id' => $assignment['device_id'],
+                    'change_type' => $changeType,
+                    'change_details' => $changeDetails
+                ]),
+                $ipAddr
+            ]);
+        } else {
+            $ins = $pdo->prepare("INSERT INTO audit_logs (user_id, action, table_name, record_id, old_values, new_values, ip_address) VALUES (?, ?, ?, ?, ?, ?, ?)");
+            $ins->execute([
+                $userId,
+                'Change Request Submitted',
+                'device_assignments',
+                $assignmentId,
+                null,
+                json_encode([
+                    'asset_tag' => $assignment['asset_tag'],
+                    'device_id' => $assignment['device_id'],
+                    'change_type' => $changeType,
+                    'change_details' => $changeDetails
+                ]),
+                $ipAddr
+            ]);
+        }
+    } catch (Exception $e) {
+        error_log('[api_change_request_form] audit_logs insert failed: ' . $e->getMessage());
+    }
+
     $response = [
         'success' => true,
         'message' => 'Change request sent. IT will follow up shortly.',
