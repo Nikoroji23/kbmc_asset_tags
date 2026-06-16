@@ -45,13 +45,13 @@ use PHPMailer\PHPMailer\Exception;
 // CONFIGURE YOUR EMAIL HERE
 // ============================================
 $email_settings = [
-    'from_email'    => 'alfonsoaninias0527@gmail.com',      // <-- CHANGE THIS
+    'from_email'    => 'itbizserv@kbmc.com.ph',      // <-- CHANGE THIS
     'from_name'     => 'KBMC Asset Management',
     'smtp_host'     => 'smtp.gmail.com',
     'smtp_port'     => 587,
     'smtp_secure'   => 'tls',
     'smtp_auth'     => true,
-    'smtp_user'     => 'alfonsoaninias0527@gmail.com',      // <-- CHANGE THIS
+    'smtp_user'     => 'itbizserv@kbmc.com.ph',      // <-- CHANGE THIS
     'smtp_pass'     => 'rmyl hwxj htgb uhbb',                          // <-- CHANGE THIS: 16-char App Password
 ];
 
